@@ -1,0 +1,31 @@
+/* app.wxss — 全局样式 + 亮/暗色板（宪章 §2） */
+
+page {
+  height: 100%;              /* 让子容器 height:100% 生效，避免 100vh 在移动端的溢出/留白 */
+
+  /* 亮色（默认） */
+  --bg: #F8FAFC;
+  --text: #1E293B;
+  --aux: #64748B;
+  --accent: #10B981;
+  --card: #FFFFFF;
+  --border: #E2E8F0;
+
+  background: var(--bg);
+  color: var(--text);
+  font-size: 30rpx;          /* ≈15px，随屏宽缩放 */
+  line-height: 1.6;
+  letter-spacing: 1rpx;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  page {
+    --bg: #0F172A;
+    --text: #F8FAFC;
+    --aux: #64748B;
+    --accent: #10B981;
+    --card: #1E293B;
+    --border: #334155;
+  }
+}

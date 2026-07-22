@@ -1,0 +1,13 @@
+/* components/privacy-anim/privacy-anim.wxss */
+.privacy-anim {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.placeholder {
+  font-size: 13px;
+  color: var(--aux, #64748B);
+  letter-spacing: 0.5px;
+}

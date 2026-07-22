@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "momo · 匿名决策",
+  "usingComponents": {
+    "privacy-anim": "/components/privacy-anim/privacy-anim"
+  },
+  "disableScroll": true
+}

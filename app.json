@@ -1,0 +1,22 @@
+{
+  "pages": [
+    "pages/room/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "momo · 匿名决策",
+    "navigationBarBackgroundColor": "#F8FAFC",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#F8FAFC",
+    "backgroundTextStyle": "dark",
+    "enablePullDownRefresh": false
+  },
+  "permission": {
+    "scope.record": {
+      "desc": "用于流式语音识别，转写完成后本地立即销毁，不会上传原始音频"
+    }
+  },
+  "requiredPrivateInfos": [],
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

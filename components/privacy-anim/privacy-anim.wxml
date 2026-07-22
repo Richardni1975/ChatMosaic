@@ -1,0 +1,5 @@
+<!-- components/privacy-anim/privacy-anim.wxml -->
+<!-- Phase 3 占位：碎纸-乱码动画与拼图合体组件 -->
+<view class="privacy-anim">
+  <view class="placeholder">🔒 碎纸化加密动效（Phase 3）</view>
+</view>

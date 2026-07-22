@@ -1,0 +1,124 @@
+<!-- pages/room/index.wxml — 纵向三段式布局 + Phase 3 可视化信任 -->
+
+<view class="room">
+
+  <!-- Zone 1：高效率公共意见展示区（65% 高度） -->
+  <view class="zone zone-1">
+    <!-- 房间码入口（默认 0000，与 PC 跨端互通） -->
+    <view class="room-bar">
+      <text class="room-label">房间</text>
+      <input class="room-input" type="number" maxlength="4" value="{{roomCode}}"
+        bindconfirm="onRoomCodeChange" bindblur="onRoomCodeChange" />
+      <text class="room-hint">默认 0000 与 PC 互通</text>
+    </view>
+
+    <!-- Phase 4：抗追踪混淆能量 / 网络脉冲 -->
+    <view class="noise-strip">
+      <view class="noise-glow" style="opacity:{{noiseEnergy / 100}}"></view>
+      <text class="noise-label">NOISE</text>
+      <view class="wave">
+        <view wx:for="{{waveBars}}" wx:key="index" class="wave-bar" style="height:{{item}}%"></view>
+      </view>
+      <text class="noise-val">{{noiseEnergy}}%</text>
+    </view>
+
+    <view class="filter-bar">
+      <view class="filter-chip {{filter === 'agree' ? 'active' : ''}}" bindtap="onFilter" data-filter="agree">赞同数</view>
+      <view class="filter-chip {{filter === 'clap' ? 'active' : ''}}" bindtap="onFilter" data-filter="clap">击掌</view>
+      <view class="filter-chip {{filter === 'topic' ? 'active' : ''}}" bindtap="onFilter" data-filter="topic">提案主题</view>
+      <view class="filter-chip ghost" bindtap="onExport">一键导出</view>
+    </view>
+
+    <scroll-view class="card-flow" scroll-y enhanced show-scrollbar="{{false}}">
+      <view wx:if="{{visibleMessages.length === 0}}" class="empty">还没有人发言，做第一个说出真实想法的人。</view>
+
+      <view wx:for="{{visibleMessages}}" wx:key="id" class="card {{item.state}}">
+
+        <!-- 状态 1：拼图收集中 -->
+        <block wx:if="{{item.state === 'collecting'}}">
+          <view class="collect-head">
+            <view class="pulse"></view>
+            <text class="collect-status">拼图收集中 ({{item.count}}/4)</text>
+            <text class="hash-tag">{{item.hashTag}}</text>
+          </view>
+          <view class="shard-row">
+            <view wx:for="{{item.slots}}" wx:for-item="s" wx:key="ch"
+              class="shard-chip {{s.filled ? 'filled' : 'empty'}}">
+              <text class="ch-label">{{s.ch}}</text>
+              <text class="pv">{{s.filled ? s.preview : '····'}}</text>
+            </view>
+          </view>
+        </block>
+
+        <!-- 状态 2：拼图合体中 -->
+        <block wx:elif="{{item.state === 'assembling'}}">
+          <view class="merge-stage">
+            <view wx:for="{{item.slots}}" wx:for-item="s" wx:key="ch"
+              class="merge-frag" style="--i:{{index}}">{{s.preview}}</view>
+            <view class="merge-core"></view>
+          </view>
+          <text class="collect-status center">重组中…</text>
+        </block>
+
+        <!-- 状态 3：解密完成 -->
+        <block wx:else>
+          <!-- 实名直发：显示发言人真名，无 SHA-256 标签 -->
+          <view wx:if="{{!item.isAnonymous}}" class="realname-head">
+            <text class="rn-badge">实名</text>
+            <text class="rn-name">{{item.userName}}</text>
+          </view>
+          <!-- 匿名：显示提案主题 + SHA-256 校验标签 -->
+          <view wx:else class="card-topic">#{{item.topic}}</view>
+          <image wx:if="{{item.imageUrl}}" class="card-image" src="{{item.imageUrl}}" mode="widthFix" show-menu-by-longpress />
+          <view wx:else class="card-body">{{item.body}}</view>
+          <view wx:if="{{item.isAnonymous && item.trust && !item.imageUrl}}" class="trust-tag">SHA-256 校验通过 ✓</view>
+          <view wx:elif="{{item.isAnonymous && !item.trust && !item.imageUrl}}" class="trust-tag bad">⚠ 完整性校验失败</view>
+          <view class="card-footer">
+            <view class="action {{item.agreed ? 'on' : ''}}" bindtap="onAgree" data-id="{{item.id}}">
+              <text class="icon">👍</text><text>{{item.agree}}</text>
+            </view>
+            <view class="action" bindtap="onClap" data-id="{{item.id}}">
+              <text class="icon">👏</text><text>{{item.clap}}</text>
+            </view>
+          </view>
+        </block>
+
+      </view>
+    </scroll-view>
+  </view>
+
+  <!-- Zone 2：加密与社会学互证动效区 -->
+  <view class="zone zone-2 {{zone2Expanded ? 'expanded' : ''}}">
+    <view wx:if="{{!zone2Expanded}}" class="health-bar">
+      <view class="dot"></view>
+      <text>安全健康度：端到端本地分片 · 已就绪</text>
+    </view>
+    <view wx:else class="glass-panel">
+      <view class="shred-stage">
+        <view wx:for="{{shredParticles}}" wx:key="key" class="shred-particle"
+          style="--dx:{{item.dx}};--dy:{{item.dy}};animation-delay:{{item.delay}}">{{item.preview}}</view>
+      </view>
+      <text class="glass-hint">明文已本地销毁 · 4 路碎片离体</text>
+    </view>
+  </view>
+
+  <!-- Zone 3：极致响应输入控制区 -->
+  <view class="zone zone-3">
+    <view class="anon-row">
+      <text class="anon-label">momo 匿名模式</text>
+      <switch checked="{{isAnonymous}}" color="#10B981" bindchange="onToggleAnonymous" />
+    </view>
+    <view class="input-row">
+      <view class="img-btn" bindtap="onChooseImage"><text>📷</text></view>
+      <view class="voice-btn {{recording ? 'recording' : ''}}"
+        bindtouchstart="onVoiceTouchStart" bindtouchend="onVoiceTouchEnd" bindtouchcancel="onVoiceTouchEnd">
+        <text>{{recording ? '松开结束' : '按住说话'}}</text>
+      </view>
+      <input class="text-input" type="text" value="{{inputText}}"
+        placeholder="{{streamingText || '说点什么…'}}" bindinput="onInput"
+        confirm-type="send" bindconfirm="onSend" />
+      <view class="send-btn" bindtap="onSend">发送</view>
+    </view>
+  </view>
+
+</view>

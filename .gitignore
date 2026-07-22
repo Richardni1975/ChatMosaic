@@ -1,0 +1,19 @@
+# 依赖
+server/node_modules/
+node_modules/
+
+# 环境变量（含真实配置，禁止提交）
+.env
+
+# 微信开发者工具本地缓存
+project.private.config.json
+.miniprogram/
+
+# 日志 / 临时
+*.log
+.DS_Store
+Thumbs.db
+
+# 上传的图片（运行时生成，不提交）
+public/uploads/*
+!public/uploads/.gitkeep

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>momo · 匿名决策 — PC 跨端</title>
+  <link rel="stylesheet" href="/style.css" />
+  <!-- PC 端运行时配置（开发/生产 API_BASE） -->
+  <script src="/config.js"></script>
+  <!-- 复用小程序端 utils/crypto.js（不改原文件，通过 module shim 加载） -->
+  <script>window.module = window.module || { exports: {} };</script>
+  <script src="/utils/crypto.js"></script>
+  <script>window.MOMO_CRYPTO = window.module.exports; window.module = undefined;</script>
+  <!-- Socket.IO 客户端（CDN） -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+  <!-- 进房界面 -->
+  <section id="lobby" class="screen">
+    <div class="lobby-card">
+      <h1>momo <span class="dim">· 匿名决策</span></h1>
+      <p class="dim">输入 4 位数字房间码进入跨端加密对讲</p>
+      <div class="code-row">
+        <input id="codeInput" class="code-input" inputmode="numeric" maxlength="4"
+          placeholder="0000" autocomplete="off" />
+        <button id="genBtn" class="ghost-btn" title="随机生成">🎲</button>
+      </div>
+      <button id="joinBtn" class="primary-btn">进入房间</button>
+      <p class="hint dim">提示：小程序端处于默认房间 <b>0000</b>，PC 输入 <b>0000</b> 可与小程序跨端互通。</p>
+    </div>
+  </section>
+
+  <!-- 房间界面 -->
+  <section id="room" class="screen hidden">
+    <header class="topbar">
+      <div class="room-tag">房间 <b id="roomLabel">----</b></div>
+      <div class="noise-strip">
+        <span class="noise-label">NOISE</span>
+        <div class="wave" id="wave"></div>
+        <span class="noise-val" id="noiseVal">0%</span>
+      </div>
+      <button id="leaveBtn" class="ghost-btn sm">离开</button>
+    </header>
+
+    <main class="card-flow" id="cardFlow"></main>
+
+    <footer class="composer">
+      <div class="anon-row">
+        <label class="switch">
+          <input type="checkbox" id="anonToggle" checked />
+          <span class="track"><span class="thumb"></span></span>
+          <span class="anon-label">momo 匿名模式</span>
+        </label>
+      </div>
+      <div class="input-row">
+        <button id="imgBtn" class="img-btn" title="上传图片（≤2MB，JPG/PNG/WebP）">📷</button>
+        <button id="voiceBtn" class="voice-btn" title="按住说话（或按住空格键）">按住说话</button>
+        <input id="textInput" class="text-input" placeholder="说点什么…" autocomplete="off" />
+        <button id="sendBtn" class="primary-btn">发送</button>
+      </div>
+      <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp" class="hidden" />
+      <div class="hint dim">鼠标长按「按住说话」或按住 <b>空格键</b> 录音（≤60s，需 Chrome/Edge 麦克风权限）</div>
+    </footer>
+  </section>
+
+  <script src="/app.js"></script>
+</body>
+</html>
