@@ -10,8 +10,9 @@ App({
 
   onLaunch() {
     // 探测系统暗色模式，供页面做 prefers-color-scheme 之外的兜底
+    // 优先用新 API getAppBaseInfo，旧基础库回退 getSystemInfoSync
     try {
-      const info = wx.getSystemInfoSync();
+      const info = wx.getAppBaseInfo ? wx.getAppBaseInfo() : wx.getSystemInfoSync();
       this.globalData.darkMode = info.theme === 'dark';
     } catch (e) {
       this.globalData.darkMode = false;
