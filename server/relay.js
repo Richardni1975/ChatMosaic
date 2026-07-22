@@ -270,7 +270,7 @@ const httpServer = http.createServer((req, res) => {
 const io = new Server(httpServer, {
   path: '/socket.io/',
   cors: { origin: '*' },
-  serveClient: false,
+  serveClient: true, // 自带 /socket.io/socket.io.min.js，PC 同源加载，免外部 CDN
   pingInterval: 15000,
   pingTimeout: 10000,
 });

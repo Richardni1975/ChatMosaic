@@ -11,8 +11,8 @@
   <script>window.module = window.module || { exports: {} };</script>
   <script src="/utils/crypto.js"></script>
   <script>window.MOMO_CRYPTO = window.module.exports; window.module = undefined;</script>
-  <!-- Socket.IO 客户端（CDN） -->
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <!-- Socket.IO 客户端（同源，由服务端 serveClient 提供，免外部 CDN） -->
+  <script src="/socket.io/socket.io.min.js"></script>
 </head>
 <body>
   <!-- 进房界面 -->
