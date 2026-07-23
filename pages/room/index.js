@@ -163,6 +163,8 @@ Page({
   ensureRecorder() {
     if (recorderManager) return recorderManager;
     recorderManager = wx.getRecorderManager();
+    recorderManager.onStart(() => console.log('[momo] 录音 onStart'));
+    recorderManager.onError((err) => console.warn('[momo] 录音 onError', err && err.errMsg));
     // 收尾逻辑集中在 onStop：手动松开（onVoiceTouchEnd 调 stop）与到 60s 自动停都走这里
     recorderManager.onStop((res) => {
       lastRecordPath = res.tempFilePath || null;
@@ -195,6 +197,7 @@ Page({
   onVoiceTouchStart() {
     // _wantRecord 标记当前按下意图；权限异步流程中若手指已抬起则放弃启动，避免孤儿录音
     this._wantRecord = true;
+    console.log('[momo] 按下说话，插件可用=', !!plugin);
     this.ensureRecordPermission(() => {
       if (!this._wantRecord) return; // 手指已离开，不再启动
       this.setData({ recording: true });
@@ -275,6 +278,7 @@ Page({
   },
 
   onVoiceTouchEnd() {
+    console.log('[momo] 松开，recording=', this.data.recording);
     this._wantRecord = false; // 标记已释放，onStop 不再当作「到时自动停」
     if (!this.data.recording) return;
     // 触发 recorder.onStop 完成收尾（停止识别器、复位状态、销毁音频由 onSend 负责）

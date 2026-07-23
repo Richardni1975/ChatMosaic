@@ -429,10 +429,13 @@ function punctuate(chunk) {
   return t + '。';
 }
 
+let wantStop = false; // 标记：recognition.start() 异步完成前用户已松开 → onstart 时立即停
+
 function startVoice() {
   if (recording) return;
   if (!SR) { alert('当前浏览器不支持 Web Speech API，请使用 Chrome/Edge 并授予麦克风权限。'); return; }
   recording = true;
+  wantStop = false;
   voiceBtn.classList.add('recording');
   voiceBtn.textContent = '松开结束';
 
@@ -444,6 +447,10 @@ function startVoice() {
   recognition.lang = 'zh-CN';
   recognition.continuous = true;
   recognition.interimResults = true;
+  // 关键：start() 是异步的，若用户在启动完成前已松开（快速点击），onstart 时立即停
+  recognition.onstart = () => {
+    if (wantStop) { try { recognition.stop(); } catch (e) {} }
+  };
   recognition.onresult = (e) => {
     let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -469,16 +476,22 @@ function startVoice() {
   try { recognition.start(); } catch (e) { stopVoiceUI(); }
   // 60s 强制上限，单一出口收尾
   recordTimer = setTimeout(() => {
-    if (recording) { console.log('[momo] 达 60s 上限，自动停止'); if (recognition) recognition.stop(); }
+    if (recording) { console.log('[momo] 达 60s 上限，自动停止'); wantStop = true; if (recognition) { try { recognition.stop(); } catch (e) {} } }
   }, MAX_RECORD_MS);
 }
 
 function stopVoice() {
   if (!recording) return;
   recording = false;
+  wantStop = true; // 若 onstart 尚未触发，启动后立即停
   if (recordTimer) { clearTimeout(recordTimer); recordTimer = null; }
   if (recognition) { try { recognition.stop(); } catch (e) {} }
-  // onend 会处理 UI 与文本落位
+  // onend 会处理 UI 与文本落位；若 onend 迟迟不来，800ms 后强制 abort 兜底
+  if (recognition) {
+    setTimeout(() => {
+      try { if (recognition && recording === false) recognition.abort(); } catch (e) {}
+    }, 800);
+  }
 }
 
 function stopVoiceUI() {
@@ -499,6 +512,7 @@ anonToggle.addEventListener('change', () => { isAnonymous = anonToggle.checked; 
 voiceBtn.addEventListener('mousedown', (e) => { e.preventDefault(); startVoice(); });
 voiceBtn.addEventListener('mouseup', stopVoice);
 voiceBtn.addEventListener('mouseleave', stopVoice);
+window.addEventListener('mouseup', stopVoice); // 兜底：在按钮外松开也能停止
 
 imgBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', () => {
