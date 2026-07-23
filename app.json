@@ -10,8 +10,10 @@
     "backgroundTextStyle": "dark",
     "enablePullDownRefresh": false
   },
-  "requiredPrivateInfos": [],
-  "style": "v2",
-  "sitemapLocation": "sitemap.json",
-  "lazyCodeLoading": "requiredComponents"
+  "permission": {
+    "scope.record": {
+      "desc": "你的语音消息将通过此功能转换为文字"
+    }
+  },
+  "style": "v2"
 }
