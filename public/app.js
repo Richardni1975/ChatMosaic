@@ -352,6 +352,11 @@ function onSend() {
   if (!text) return;
   const msgId = genMsgId();
 
+  // 发送即结束语音输入：停止识别，清空语音缓存，防止 onend 把旧文本写回输入框
+  if (recording) stopVoice();
+  recFinalText = '';
+  recInterim = '';
+
   if (!isAnonymous) {
     const direct = { type: 'direct_msg', msgId, text, userName, isAnonymous: false, timestamp: Date.now() };
     if (socket) socket.emit('msg', direct);
@@ -452,6 +457,7 @@ function startVoice() {
     if (wantStop) { try { recognition.stop(); } catch (e) {} }
   };
   recognition.onresult = (e) => {
+    if (!recording) return; // 松开后/发送后的回调不再写回输入框
     let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const res = e.results[i];
