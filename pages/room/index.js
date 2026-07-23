@@ -309,10 +309,10 @@ Page({
       this.sendJoin(this.data.roomCode); // 进房（默认 0000，与 PC 跨端互通）
     });
 
-    socket.onError((err) => console.warn('[momo] 中转连接异常（UI 仍可本地展示）', err));
+    socket.onError((err) => console.warn('[momo] ws 异常', err && err.errMsg));
 
-    socket.onClose(() => {
-      console.log('[momo] 中转连接关闭');
+    socket.onClose((info) => {
+      console.warn('[momo] ws 关闭 code=', info && info.code, 'reason=', info && info.reason, 'wasClean=', info && info.wasClean);
       this.stopHeartbeat();
       this.socket = null;
       if (!this.manualClose) this.scheduleReconnect(); // 非主动关闭 → 退避重连
@@ -331,18 +331,24 @@ Page({
         return;
       }
 
-      if (msg.type === 'shard-seen') {
-        this.bumpEnergy(randInt(3, 8));
-        this.onShardSeen(msg);
-      } else if (msg.type === 'assembled') {
-        this.bumpEnergy(randInt(10, 20));
-        this.onAssembled(msg);
-      } else if (msg.type === 'direct_msg') {
-        // 实名直发：不经分片/能量，直接渲染
-        this.onDirectMsg(msg);
-      } else if (msg.type === 'image') {
-        // 图片展示：仅 URL，二进制已走 HTTP
-        this.onImage(msg);
+      console.log('[momo] ← recv', msg.type, msg.msgId || ''); // 诊断：确认收到
+
+      try {
+        if (msg.type === 'shard-seen') {
+          this.bumpEnergy(randInt(3, 8));
+          this.onShardSeen(msg);
+        } else if (msg.type === 'assembled') {
+          this.bumpEnergy(randInt(10, 20));
+          this.onAssembled(msg);
+        } else if (msg.type === 'direct_msg') {
+          // 实名直发：不经分片/能量，直接渲染
+          this.onDirectMsg(msg);
+        } else if (msg.type === 'image') {
+          // 图片展示：仅 URL，二进制已走 HTTP
+          this.onImage(msg);
+        }
+      } catch (e) {
+        console.error('[momo] 处理消息异常', msg.type, e.message);
       }
     });
   },
