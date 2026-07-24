@@ -21,6 +21,7 @@ const textInput = $('textInput'), sendBtn = $('sendBtn'), voiceBtn = $('voiceBtn
 const imgBtn = $('imgBtn'), fileInput = $('fileInput');
 const anonToggle = $('anonToggle');
 const waveEl = $('wave'), noiseValEl = $('noiseVal');
+const exportBtn = $('exportBtn');
 
 /* ---------- 状态 ---------- */
 let socket = null;
@@ -404,6 +405,33 @@ function flashToast(msg) {
   t.classList.add('show');
   clearTimeout(flashToast._timer);
   flashToast._timer = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+/** 一键导出：把已解密的聊天记录汇总到剪贴板 */
+function onExport() {
+  const items = messages.filter((m) => m.state === 'decrypted' && (m.body || m.imageUrl));
+  if (!items.length) { flashToast('暂无可导出内容'); return; }
+  const text = items.map((m) => {
+    const head = m.isAnonymous ? '#匿名发言' : ('实名：' + (m.userName || ''));
+    const content = m.imageUrl ? '[图片] ' + m.imageUrl : m.body;
+    return `${head}\n${content}\n赞同 ${m.agree || 0} · 击掌 ${m.clap || 0}`;
+  }).join('\n---\n');
+  const done = () => flashToast('已导出 ' + items.length + ' 条到剪贴板');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done(); } catch (e) { flashToast('导出失败'); }
+  ta.remove();
 }
 
 function addDecryptedLocal(msgId, text, matchHash) {
