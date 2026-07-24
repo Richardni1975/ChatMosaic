@@ -24,7 +24,7 @@ const { createState, ingestShard, expireBuckets, jitterDelay } = require('./matc
 const config = require('./config.js');
 const { cleanupOldFiles } = require('./cleanup.js');
 
-const { PORT, PUBLIC_URL, MAX_AGE_HOURS } = config;
+const { PORT, PUBLIC_URL, MAX_AGE_HOURS, SILICONFLOW_API_KEY } = config;
 const DEFAULT_ROOM = '0000';            // 小程序端未传 roomId，统一进默认房间
 const SWEEP_INTERVAL_MS = 15 * 1000;
 const DECOY_PERIOD_MIN_MS = 3000;
@@ -259,10 +259,66 @@ function handleUpload(req, res) {
   });
 }
 
+/* ---------- 语音转文字 STT（后端接力 → 硅基流动 SenseVoice） ---------- */
+// 隐私：音频仅在内存中转给 SiliconFlow，服务端不落盘、不留存、不打印内容。
+
+const STT_URL = 'https://api.siliconflow.cn/v1/audio/transcriptions';
+const STT_MODEL = 'FunAudioLLM/SenseVoice-Small';
+const MAX_AUDIO_BYTES = 10 * 1024 * 1024; // 10MB
+
+const sttUpload = multer({
+  storage: multer.memoryStorage(), // 内存暂存，不落盘
+  limits: { fileSize: MAX_AUDIO_BYTES },
+});
+
+async function callSiliconFlowSTT(audioBuffer, originalname, mimetype) {
+  const form = new FormData();
+  form.append('model', STT_MODEL);
+  form.append('file', new Blob([audioBuffer], { type: mimetype || 'audio/mpeg' }), originalname || 'audio.mp3');
+  const resp = await fetch(STT_URL, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + SILICONFLOW_API_KEY },
+    body: form,
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const msg = (data && (data.error && data.error.message) || data.message) || ('HTTP ' + resp.status);
+    throw new Error(msg);
+  }
+  return data;
+}
+
+function handleSTT(req, res) {
+  sttUpload.single('file')(req, res, async (err) => {
+    if (err) {
+      const msg = err.code === 'LIMIT_FILE_SIZE' ? '音频超过 10MB' : '音频上传失败';
+      return json(res, 400, { error: msg });
+    }
+    const f = req.file;
+    if (!f || !f.buffer) return json(res, 400, { error: '未收到音频' });
+    if (!SILICONFLOW_API_KEY) {
+      return json(res, 500, { error: '服务端未配置 SILICONFLOW_API_KEY' });
+    }
+    try {
+      const data = await callSiliconFlowSTT(f.buffer, f.originalname, f.mimetype);
+      const text = (data && typeof data.text === 'string') ? data.text : '';
+      // 仅打印长度，绝不打印识别内容（无日志原则）
+      console.log(`[momo-relay] STT 完成 ${f.size}B → ${text.length} 字`);
+      json(res, 200, { ok: true, text });
+    } catch (e) {
+      console.warn('[momo-relay] STT 失败:', e.message);
+      json(res, 502, { error: '语音识别失败：' + e.message });
+    }
+    // f.buffer 出作用域即被 GC，内存零留存
+  });
+}
+
 /* ---------- 服务装配 ---------- */
 
 const httpServer = http.createServer((req, res) => {
-  if (req.method === 'POST' && req.url.split('?')[0] === '/upload') return handleUpload(req, res);
+  const urlPath = req.url.split('?')[0];
+  if (req.method === 'POST' && urlPath === '/upload') return handleUpload(req, res);
+  if (req.method === 'POST' && urlPath === '/api/stt') return handleSTT(req, res);
   serveStatic(req, res);
 });
 

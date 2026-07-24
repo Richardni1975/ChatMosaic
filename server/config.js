@@ -31,4 +31,6 @@ module.exports = {
   PUBLIC_URL: process.env.PUBLIC_URL || `http://localhost:${PORT}`,
   // 图片存活时长（小时），超过后由定时任务物理删除
   MAX_AGE_HOURS: parseInt(process.env.MAX_AGE_HOURS, 10) || 24,
+  // 硅基流动 SiliconFlow API Key（后端接力 STT 用），填入 .env，勿提交
+  SILICONFLOW_API_KEY: process.env.SILICONFLOW_API_KEY || '',
 };

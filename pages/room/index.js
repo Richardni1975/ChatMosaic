@@ -169,15 +169,57 @@ Page({
     recorderManager.onStart(() => console.log('[momo] 录音 onStart'));
     recorderManager.onError((err) => console.warn('[momo] 录音 onError', err && err.errMsg));
     recorderManager.onStop((res) => {
-      lastRecordPath = res.tempFilePath || null;
-      console.log('[momo] 录音结束，待发送后销毁:', lastRecordPath);
+      const filePath = res.tempFilePath || null;
+      lastRecordPath = filePath;
+      console.log('[momo] 录音结束，上传 STT:', filePath, res.duration ? res.duration + 'ms' : '');
       if (this._wantRecord) {
         this._wantRecord = false;
         wx.showToast({ title: '已达 60 秒上限', icon: 'none' });
       }
-      this.setData({ recording: false });
+      this.setData({ recording: false, streamingText: '识别中…' });
+      if (filePath) this.uploadSTT(filePath);
     });
     return recorderManager;
+  },
+
+  /** 上传录音到后端 /api/stt，识别文本填入输入框，转写完成立即销毁音频 */
+  uploadSTT(filePath) {
+    wx.uploadFile({
+      url: clientConfig.httpBase + '/api/stt',
+      filePath,
+      name: 'file',
+      success: (res) => {
+        let data = {};
+        try { data = JSON.parse(res.data); } catch (e) {}
+        if (data.ok && typeof data.text === 'string') {
+          this.setData({ inputText: this.data.inputText + data.text, streamingText: '' });
+        } else {
+          this.setData({ streamingText: '' });
+          wx.showToast({ title: '识别失败：' + (data.error || res.statusCode), icon: 'none' });
+        }
+      },
+      fail: (err) => {
+        this.setData({ streamingText: '' });
+        console.warn('[momo] STT 上传失败', err);
+        wx.showToast({ title: '语音识别失败', icon: 'none' });
+      },
+      complete: () => {
+        // 宪章 §3：转写完成后立即本地物理销毁原始音频
+        this.destroyAudio(filePath);
+      },
+    });
+  },
+
+  destroyAudio(filePath) {
+    if (!filePath) return;
+    try {
+      wx.getFileSystemManager().unlink({
+        filePath,
+        success: () => console.log('[momo] 原始音频已销毁:', filePath),
+        fail: () => {},
+      });
+    } catch (e) {}
+    if (lastRecordPath === filePath) lastRecordPath = null;
   },
 
   onVoiceTouchStart() {
