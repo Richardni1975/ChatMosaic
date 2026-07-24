@@ -142,6 +142,11 @@ Page({
     this.setData({ isAnonymous: e.detail.value });
   },
 
+  /** 匿名按钮点击切换：绿=匿名开，灰=实名 */
+  toggleAnonymous() {
+    this.setData({ isAnonymous: !this.data.isAnonymous });
+  },
+
   /* ---------------- Zone 3：语音识别（同声传译插件优先，降级纯录音） ---------------- */
 
   // 插件可用时用 getRecordRecognizerManager：自带录音 + 流式转文字，无需再开 recorderManager（避免双重抢麦）

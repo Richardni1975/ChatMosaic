@@ -4,12 +4,13 @@
 
   <!-- Zone 1：高效率公共意见展示区（65% 高度） -->
   <view class="zone zone-1">
-    <!-- 房间码入口（默认 0000，与 PC 跨端互通） -->
+    <!-- 房间码入口（默认 0000，与 PC 跨端互通）+ 一键导出 -->
     <view class="room-bar">
       <text class="room-label">房间</text>
       <input class="room-input" type="number" maxlength="4" value="{{roomCode}}"
         bindconfirm="onRoomCodeChange" bindblur="onRoomCodeChange" />
       <text class="room-hint">默认 0000 与 PC 互通</text>
+      <view class="export-btn" bindtap="onExport">导出</view>
     </view>
 
     <!-- Phase 4：抗追踪混淆能量 / 网络脉冲 -->
@@ -20,13 +21,6 @@
         <view wx:for="{{waveBars}}" wx:key="index" class="wave-bar" style="height:{{item}}%"></view>
       </view>
       <text class="noise-val">{{noiseEnergy}}%</text>
-    </view>
-
-    <view class="filter-bar">
-      <view class="filter-chip {{filter === 'agree' ? 'active' : ''}}" bindtap="onFilter" data-filter="agree">赞同数</view>
-      <view class="filter-chip {{filter === 'clap' ? 'active' : ''}}" bindtap="onFilter" data-filter="clap">击掌</view>
-      <view class="filter-chip {{filter === 'topic' ? 'active' : ''}}" bindtap="onFilter" data-filter="topic">提案主题</view>
-      <view class="filter-chip ghost" bindtap="onExport">一键导出</view>
     </view>
 
     <scroll-view class="card-flow" scroll-y enhanced show-scrollbar="{{false}}">
@@ -102,22 +96,21 @@
     </view>
   </view>
 
-  <!-- Zone 3：极致响应输入控制区 -->
+  <!-- Zone 3：左侧固定文本框 + 右侧竖排按钮 -->
   <view class="zone zone-3">
-    <view class="anon-row">
-      <text class="anon-label">momo 匿名模式</text>
-      <switch checked="{{isAnonymous}}" color="#10B981" bindchange="onToggleAnonymous" />
-    </view>
-    <view class="input-row">
-      <view class="img-btn" bindtap="onChooseImage"><text>📷</text></view>
-      <view class="voice-btn {{recording ? 'recording' : ''}}"
-        bindtouchstart="onVoiceTouchStart" bindtouchend="onVoiceTouchEnd" bindtouchcancel="onVoiceTouchEnd">
-        <text>{{recording ? '松开结束' : '按住说话'}}</text>
-      </view>
+    <view class="composer">
       <textarea class="text-input" value="{{inputText}}"
         placeholder="{{streamingText || '说点什么…'}}" bindinput="onInput"
-        auto-height maxlength="-1" cursor-spacing="20" adjust-position="{{true}}" />
-      <view class="send-btn" bindtap="onSend">发送</view>
+        maxlength="-1" cursor-spacing="20" adjust-position="{{true}}" />
+      <view class="right-col">
+        <view class="r-btn img-btn" bindtap="onChooseImage">📷</view>
+        <view class="r-btn anon-btn {{isAnonymous ? 'on' : 'off'}}" bindtap="toggleAnonymous">匿名</view>
+        <view class="r-btn voice-btn {{recording ? 'recording' : ''}}"
+          bindtouchstart="onVoiceTouchStart" bindtouchend="onVoiceTouchEnd" bindtouchcancel="onVoiceTouchEnd">
+          {{recording ? '松开' : '按住说话'}}
+        </view>
+        <view class="r-btn send-btn" bindtap="onSend">发送</view>
+      </view>
     </view>
   </view>
 

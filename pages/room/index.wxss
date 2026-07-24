@@ -45,7 +45,16 @@
   border-radius: 10rpx;
   font-family: "SF Mono", "Consolas", monospace;
 }
-.room-hint { font-size: 20rpx; color: var(--aux); }
+.room-hint { font-size: 20rpx; color: var(--aux); flex: 1; }
+
+.export-btn {
+  flex: 0 0 auto;
+  font-size: 22rpx;
+  color: var(--accent);
+  border: 1rpx solid var(--accent);
+  border-radius: 10rpx;
+  padding: 6rpx 16rpx;
+}
 
 /* ---- Phase 4：抗追踪混淆能量 / 网络脉冲 ---- */
 .noise-strip {
@@ -472,67 +481,18 @@
   background: var(--card);
 }
 
-.anon-row {
+/* 左侧固定文本框 + 右侧竖排按钮 */
+.composer {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16rpx;
-}
-
-.anon-label {
-  font-size: 26rpx;
-  color: var(--text);
-  letter-spacing: 1rpx;
-}
-
-.input-row {
-  display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   gap: 16rpx;
-}
-
-.img-btn {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 80rpx;
-  height: 80rpx;
-  font-size: 32rpx;
-  background: var(--bg);
-  border: 1rpx solid var(--border);
-  border-radius: 24rpx;
-}
-
-.card-image {
-  width: 100%;
-  border-radius: 16rpx;
-  margin: 4rpx 0;
-  display: block;
-}
-
-.voice-btn {
-  flex: 0 0 auto;
-  padding: 20rpx 24rpx;
-  font-size: 26rpx;
-  color: var(--text);
-  background: var(--bg);
-  border: 1rpx solid var(--border);
-  border-radius: 24rpx;
-}
-
-.voice-btn.recording {
-  color: #04110c;
-  background: var(--accent);
-  border-color: var(--accent);
-  box-shadow: 0 0 24rpx rgba(16, 185, 129, 0.5);
+  height: 240rpx;            /* 固定大小，不自适应 */
 }
 
 .text-input {
   flex: 1;
   min-width: 0;
-  min-height: 80rpx;
-  max-height: 280rpx;        /* 约四行，超出内部滚动，便于校对长文本 */
+  height: 100%;
   padding: 18rpx 24rpx;
   font-size: 30rpx;
   line-height: 1.5;
@@ -543,12 +503,44 @@
   box-sizing: border-box;
 }
 
-.send-btn {
-  flex: 0 0 auto;
-  padding: 20rpx 36rpx;
-  font-size: 28rpx;
+.right-col {
+  flex: 0 0 144rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  height: 100%;
+}
+
+.r-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  text-align: center;
+}
+
+.r-btn.img-btn { font-size: 34rpx; }
+
+.anon-btn.on { color: #04110c; background: var(--accent); border-color: var(--accent); }
+.anon-btn.off { color: var(--aux); }
+
+.voice-btn.recording {
   color: #04110c;
   background: var(--accent);
-  border-radius: 24rpx;
-  box-shadow: 0 0 20rpx rgba(16, 185, 129, 0.35);
+  border-color: var(--accent);
+  box-shadow: 0 0 16rpx rgba(16, 185, 129, 0.5);
+}
+
+.send-btn { color: #04110c; background: var(--accent); border-color: var(--accent); }
+
+.card-image {
+  width: 100%;
+  border-radius: 16rpx;
+  margin: 4rpx 0;
+  display: block;
 }
