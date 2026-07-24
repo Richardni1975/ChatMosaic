@@ -10,7 +10,11 @@
   <!-- 复用小程序端 utils/crypto.js（不改原文件，通过 module shim 加载） -->
   <script>window.module = window.module || { exports: {} };</script>
   <script src="/utils/crypto.js"></script>
-  <script>window.MOMO_CRYPTO = window.module.exports; window.module = undefined;</script>
+  <script>window.MOMO_CRYPTO = window.module.exports;</script>
+  <!-- 复用 utils/profanity.js（客户端侮辱性言论过滤） -->
+  <script>window.module = { exports: {} };</script>
+  <script src="/utils/profanity.js"></script>
+  <script>window.MOMO_PROFANITY = window.module.exports; window.module = undefined;</script>
   <!-- Socket.IO 客户端（同源，由服务端 serveClient 提供，免外部 CDN） -->
   <script src="/socket.io/socket.io.min.js"></script>
 </head>

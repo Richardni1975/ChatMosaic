@@ -9,6 +9,7 @@
 | 1 | XOR 4-of-4 分片/重组 + SHA-256 校验 | `utils/crypto.test.js` (40) | 往返还原、篡改检测、乱序还原、多语种/Emoji |
 | 2 | matcher 桶匹配 + seen 事件 + decoy 忽略 + TTL | `server/matcher.test.js` (39) | 齐四广播/销毁、重传幂等、matchHash 不一致丢弃 |
 | 3 | 24h 图片自动清理 | `server/cleanup.test.js` (12) | 超时删除、.gitkeep 保留、新文件保留 |
+| 4 | 客户端侮辱性言论过滤 | `utils/profanity.test.js` (15) | 检测/遮罩、分隔变体、不误伤正常词 |
 | 4 | 小程序→PC 跨端分片拼图 | `server/smoke.test.js` | ws 发碎片 → sio 收 assembled → 还原原文 |
 | 5 | PC→小程序 跨端分片拼图 | `server/smoke.test.js` | sio 发碎片 → ws 收 assembled → 还原原文 |
 | 6 | 实名 direct_msg 跨端透传 | `server/smoke.test.js` | 跳过 matcher/Jitter，房间内广播 |

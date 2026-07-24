@@ -251,3 +251,21 @@ body {
   15% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.5); }
 }
+
+/* 顶部轻提示 */
+.toast {
+  position: fixed;
+  top: 18px; left: 50%;
+  transform: translate(-50%, -20px);
+  background: rgba(16, 185, 129, 0.95);
+  color: #04110c;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  z-index: 10000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }

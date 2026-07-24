@@ -3,6 +3,7 @@
 
 const crypto = require('../../utils/crypto.js'); // Phase 2 客户端 XOR 分片
 const delay = require('../../utils/delay.js');   // Phase 4 stub
+const profanity = require('../../utils/profanity.js'); // 客户端本地侮辱性言论过滤
 const clientConfig = require('../../utils/client-config.js'); // 开发/生产地址切换
 
 // Phase 2：WebSocket 中转服务地址（由 utils/client-config.js 统一配置）
@@ -476,10 +477,17 @@ Page({
   },
 
   onSend() {
-    const text = (this.data.inputText || '').trim();
-    if (!text) {
+    const raw = (this.data.inputText || '').trim();
+    if (!raw) {
       wx.showToast({ title: '内容为空', icon: 'none' });
       return;
+    }
+
+    // 发送前本地脱敏侮辱性言论（主防线：脏话不进信道）
+    let body = raw;
+    if (profanity.contains(raw)) {
+      body = profanity.mask(raw);
+      wx.showToast({ title: '已脱敏不当言论', icon: 'none' });
     }
 
     const msgId = this.genMsgId();
@@ -488,7 +496,7 @@ Page({
       const direct = {
         type: 'direct_msg',
         msgId,
-        text,
+        text: body,
         userName: this.data.userName,
         isAnonymous: false,
         timestamp: Date.now(),
@@ -498,17 +506,17 @@ Page({
       } else {
         console.warn('[momo] 中转未连接，实名消息仅本地展示');
       }
-      this.addDirect(msgId, text, this.data.userName);
+      this.addDirect(msgId, body, this.data.userName);
       this.setData({ inputText: '', streamingText: '' });
       this.destroyLocalRecord();
       return;
     }
 
-    const fragments = crypto.splitMessage(text);
+    const fragments = crypto.splitMessage(body);
     const matchHash = fragments[0].matchHash;
 
     try {
-      console.assert(crypto.combineMessage(fragments) === text, '[momo] 分片往返还原失败');
+      console.assert(crypto.combineMessage(fragments) === body, '[momo] 分片往返还原失败');
     } catch (e) {
       console.warn('[momo] 重组校验异常:', e.message);
     }
@@ -529,7 +537,7 @@ Page({
       this.upsertCollecting(msgId, matchHash, null);
     } else {
       console.warn('[momo] 中转未连接，本地直接展示');
-      this.addDecrypted(msgId, text, matchHash, '匿名发言');
+      this.addDecrypted(msgId, body, matchHash, '匿名发言');
     }
 
     this.destroyLocalRecord();
@@ -539,9 +547,10 @@ Page({
   /* ---------------- 实名直发：接收与渲染 ---------------- */
 
   onDirectMsg(evt) {
-    const { msgId, text, userName } = evt;
+    const { msgId, userName } = evt;
     if (this.seenIds && this.seenIds.has(msgId)) return;
-    this.addDirect(msgId, text, userName || '匿名');
+    // 接收端兜底遮罩（防老版本/被绕过的发送端）
+    this.addDirect(msgId, profanity.mask(evt.text || ''), userName || '匿名');
   },
 
   addDirect(msgId, text, userName) {
@@ -636,6 +645,7 @@ Page({
       this.setCardState(msgId, 'decrypted', { body: '⚠ 重组失败：碎片不完整', trust: false });
       return;
     }
+    text = profanity.mask(text); // 接收端兜底遮罩
     console.log('[momo] 拼图重组完成，还原长度', text.length);
 
     setTimeout(() => {

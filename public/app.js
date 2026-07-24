@@ -3,6 +3,7 @@
 // 协议与小程序端完全一致：shard / shard-seen / assembled / direct_msg / ping-pong / isDecoy。
 
 const crypto = window.MOMO_CRYPTO;
+const profanity = window.MOMO_PROFANITY;
 const API_BASE = (window.MOMO_CONFIG && window.MOMO_CONFIG.API_BASE) || ''; // '' = 同源
 const MAX_RECORD_MS = 60000; // 与小程序端对齐：60s 上限
 const CHANNELS = ['ch0', 'ch1', 'ch2', 'ch3'];
@@ -260,6 +261,7 @@ function onAssembled(evt) {
   let text = '';
   try { text = crypto.combineMessage(fragments); }
   catch (e) { console.warn('[momo] 重组失败', e.message); data.state = 'decrypted'; data.body = '⚠ 重组失败'; paintCard(data); return; }
+  if (profanity) text = profanity.mask(text); // 接收端兜底遮罩
 
   setTimeout(() => { data.state = 'assembling'; paintCard(data); }, 450);
   setTimeout(() => {
@@ -269,9 +271,10 @@ function onAssembled(evt) {
 }
 
 function onDirectMsg(evt) {
-  const { msgId, text, userName: who } = evt;
+  const { msgId, userName: who } = evt;
   if (seenIds.has(msgId)) return;
   seenIds.add(msgId);
+  const text = profanity ? profanity.mask(evt.text || '') : (evt.text || ''); // 接收端兜底遮罩
   const data = {
     msgId, state: 'decrypted', isAnonymous: false, userName: who || '匿名',
     topic: '', body: text, agree: 0, clap: 0, agreed: false, trust: false,
@@ -348,8 +351,8 @@ function genMsgId() { return 'm' + Date.now().toString(36) + Math.floor(Math.ran
 function randInt(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
 
 function onSend() {
-  const text = textInput.value.trim();
-  if (!text) return;
+  const raw = textInput.value.trim();
+  if (!raw) return;
   const msgId = genMsgId();
 
   // 发送即结束语音输入：停止识别，清空语音缓存，防止 onend 把旧文本写回输入框
@@ -357,15 +360,22 @@ function onSend() {
   recFinalText = '';
   recInterim = '';
 
+  // 发送前本地脱敏侮辱性言论（主防线）
+  let body = raw;
+  if (profanity && profanity.contains(raw)) {
+    body = profanity.mask(raw);
+    flashToast('已脱敏不当言论');
+  }
+
   if (!isAnonymous) {
-    const direct = { type: 'direct_msg', msgId, text, userName, isAnonymous: false, timestamp: Date.now() };
+    const direct = { type: 'direct_msg', msgId, text: body, userName, isAnonymous: false, timestamp: Date.now() };
     if (socket) socket.emit('msg', direct);
-    addDirectLocal(msgId, text, userName);
+    addDirectLocal(msgId, body, userName);
     textInput.value = ''; streamingText = '';
     return;
   }
 
-  const fragments = crypto.splitMessage(text);
+  const fragments = crypto.splitMessage(body);
   playShred(fragments);
   bumpEnergy(randInt(10, 20));
   if (socket) {
@@ -376,9 +386,24 @@ function onSend() {
     upsertCollecting(msgId, fragments[0].matchHash, null);
   } else {
     // 未连接：本地直接展示
-    addDecryptedLocal(msgId, text, fragments[0].matchHash);
+    addDecryptedLocal(msgId, body, fragments[0].matchHash);
   }
   textInput.value = ''; streamingText = '';
+}
+
+/** 顶部轻提示（自动消失） */
+function flashToast(msg) {
+  let t = document.getElementById('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    t.className = 'toast';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(flashToast._timer);
+  flashToast._timer = setTimeout(() => t.classList.remove('show'), 1800);
 }
 
 function addDecryptedLocal(msgId, text, matchHash) {
