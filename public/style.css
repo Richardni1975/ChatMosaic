@@ -55,6 +55,19 @@ body {
 
 .lobby-card p { font-size: 13px; margin-bottom: 20px; }
 
+/* 首页提醒条 */
+.notice {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.10);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+
 .code-row { display: flex; gap: 8px; margin-bottom: 16px; }
 
 .code-input {
