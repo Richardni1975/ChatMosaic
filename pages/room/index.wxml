@@ -9,8 +9,10 @@
       <text class="room-label">房间</text>
       <input class="room-input" type="number" maxlength="4" value="{{roomCode}}"
         bindconfirm="onRoomCodeChange" bindblur="onRoomCodeChange" />
-      <text class="room-hint">默认 0000 与 PC 互通</text>
+      <text class="room-hint">4 位数字，与 PC 互通</text>
+      <view class="copy-btn" bindtap="onCopyRoomCode">复制</view>
       <view class="export-btn" bindtap="onExport">导出</view>
+      <view class="leave-btn" bindtap="onLeaveRoom">离开</view>
     </view>
 
     <!-- Phase 4：抗追踪混淆能量 / 网络脉冲 -->

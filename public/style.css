@@ -68,7 +68,34 @@ body {
   text-align: left;
 }
 
+/* 分隔线 */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0;
+}
+.divider .line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
 .code-row { display: flex; gap: 8px; margin-bottom: 16px; }
+
+.join-btn {
+  height: 56px;
+  padding: 0 18px;
+  background: var(--accent);
+  color: var(--accent-deep);
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.join-btn:hover { filter: brightness(1.08); }
+.join-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .code-input {
   flex: 1;

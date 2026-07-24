@@ -23,15 +23,21 @@
   <section id="lobby" class="screen">
     <div class="lobby-card">
       <h1>momo <span class="dim">· 匿名决策</span></h1>
-      <p class="dim">输入 4 位数字房间码进入跨端加密对讲</p>
+      <p class="dim">熟人匿名沟通 · 集体决策 · 跨端加密对讲</p>
       <div class="notice">⏳ 首次打开可能慢 2–5 秒（服务器冷启动），请稍候；进房后语音识别每次约 2–3 秒返回。</div>
+
+      <button id="createBtn" class="primary-btn">创建新房间</button>
+
+      <div class="divider">
+        <span class="line"></span><span class="dim">或</span><span class="line"></span>
+      </div>
+
       <div class="code-row">
         <input id="codeInput" class="code-input" inputmode="numeric" maxlength="4"
           placeholder="0000" autocomplete="off" />
-        <button id="genBtn" class="ghost-btn" title="随机生成">🎲</button>
+        <button id="joinBtn" class="join-btn">加入</button>
       </div>
-      <button id="joinBtn" class="primary-btn">进入房间</button>
-      <p class="hint dim">提示：小程序端处于默认房间 <b>0000</b>，PC 输入 <b>0000</b> 可与小程序跨端互通。</p>
+      <p class="hint dim">与手机端约定相同 4 位房间号即可跨端互通</p>
     </div>
   </section>
 
@@ -39,6 +45,7 @@
   <section id="room" class="screen hidden">
     <header class="topbar">
       <div class="room-tag">房间 <b id="roomLabel">----</b></div>
+      <button id="copyBtn" class="ghost-btn sm">复制</button>
       <div class="noise-strip">
         <span class="noise-label">NOISE</span>
         <div class="wave" id="wave"></div>

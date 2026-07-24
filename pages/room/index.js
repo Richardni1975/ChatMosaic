@@ -63,12 +63,18 @@ Page({
     waveBars: waveBarsInit(),
   },
 
-  onLoad() {
+  onLoad(options) {
     this.applyFilter();
     this.seenIds = new Set();
     this.reconnectAttempts = 0;
     this.manualClose = false;
-    this.setData({ userName: '玩家' + randInt(1000, 9999) });
+
+    // 从 lobby 接收房间号（query 参数）；无参数或非法时回退默认 0000
+    const roomCode = (options && options.roomCode && /^\d{4}$/.test(options.roomCode))
+      ? options.roomCode
+      : '0000';
+
+    this.setData({ roomCode, userName: '玩家' + randInt(1000, 9999) });
     this.connectRelay();
     this.noiseTimer = setInterval(() => this.onNoiseTick(), 180);
   },
@@ -389,6 +395,25 @@ Page({
     }
   },
 
+  /** 复制当前房间号到剪贴板 */
+  onCopyRoomCode() {
+    wx.setClipboardData({
+      data: this.data.roomCode,
+      success: () => wx.showToast({ title: '房间号已复制 ' + this.data.roomCode, icon: 'success' }),
+    });
+  },
+
+  /** 离开房间，返回大厅 */
+  onLeaveRoom() {
+    this.teardownRelay();
+    const pages = getCurrentPages();
+    if (pages.length > 1) {
+      wx.navigateBack({ delta: 1 });
+    } else {
+      wx.redirectTo({ url: '/pages/lobby/index' });
+    }
+  },
+
   onRoomCodeChange(e) {
     let code = (e.detail.value || '').trim();
     if (!/^\d{4}$/.test(code)) {
@@ -602,7 +627,7 @@ Page({
       filePath,
       name: 'file',
       formData: {
-        roomCode: '0000',
+        roomCode: this.data.roomCode,
         userName: this.data.userName,
         isAnonymous: this.data.isAnonymous ? 'true' : 'false',
       },

@@ -1,0 +1,20 @@
+<!-- pages/lobby/index.wxml — 进房入口：创建新房间 / 加入已有房间 -->
+<view class="lobby">
+  <view class="lobby-card">
+    <view class="lobby-title">momo <text class="dim">· 匿名决策</text></view>
+    <view class="lobby-desc">熟人匿名沟通 · 集体决策 · 跨端加密对讲</view>
+
+    <button class="primary-btn" bindtap="onCreateRoom">创建新房间</button>
+
+    <view class="divider">
+      <view class="line"></view><text class="dim">或</text><view class="line"></view>
+    </view>
+
+    <view class="join-row">
+      <input class="code-input" type="number" maxlength="4"
+        placeholder="0000" value="{{joinCode}}" bindinput="onCodeInput" />
+      <button class="join-btn" bindtap="onJoinRoom" disabled="{{joinCode.length < 4}}">加入</button>
+    </view>
+    <text class="hint dim">默认房间 0000 与 PC 跨端互通</text>
+  </view>
+</view>

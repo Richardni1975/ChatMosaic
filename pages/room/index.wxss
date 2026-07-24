@@ -47,13 +47,28 @@
 }
 .room-hint { font-size: 20rpx; color: var(--aux); flex: 1; }
 
+.copy-btn,
+.leave-btn,
 .export-btn {
   flex: 0 0 auto;
   font-size: 22rpx;
-  color: var(--accent);
-  border: 1rpx solid var(--accent);
   border-radius: 10rpx;
   padding: 6rpx 16rpx;
+}
+
+.copy-btn {
+  color: var(--accent);
+  border: 1rpx solid var(--accent);
+}
+
+.export-btn {
+  color: var(--accent);
+  border: 1rpx solid var(--accent);
+}
+
+.leave-btn {
+  color: #ef4444;
+  border: 1rpx solid #ef4444;
 }
 
 /* ---- Phase 4：抗追踪混淆能量 / 网络脉冲 ---- */

@@ -14,8 +14,8 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 /* ---------- DOM ---------- */
 const $ = (id) => document.getElementById(id);
 const lobby = $('lobby'), roomView = $('room');
-const codeInput = $('codeInput'), joinBtn = $('joinBtn'), genBtn = $('genBtn');
-const roomLabel = $('roomLabel'), leaveBtn = $('leaveBtn');
+const codeInput = $('codeInput'), joinBtn = $('joinBtn'), createBtn = $('createBtn');
+const roomLabel = $('roomLabel'), leaveBtn = $('leaveBtn'), copyBtn = $('copyBtn');
 const cardFlow = $('cardFlow');
 const textInput = $('textInput'), sendBtn = $('sendBtn'), voiceBtn = $('voiceBtn');
 const imgBtn = $('imgBtn'), fileInput = $('fileInput');
@@ -74,10 +74,22 @@ function genCode() {
   return String(Math.floor(Math.random() * 10000)).padStart(4, '0');
 }
 
-function doJoin() {
-  let code = codeInput.value.trim();
-  if (!/^\d{4}$/.test(code)) code = genCode();
+/** "创建新房间" — 自动生成房间号并进入 */
+function doCreate() {
+  const code = genCode();
   codeInput.value = code;
+  flashToast('房间号：' + code + ' — 已创建并进入');
+  if (!socket) connect();
+  socket.emit('join', { roomCode: code });
+}
+
+/** "加入" — 使用输入的 4 位房间号进入 */
+function doJoin() {
+  const code = codeInput.value.trim();
+  if (!/^\d{4}$/.test(code)) {
+    flashToast('请输入 4 位数字房间号');
+    return;
+  }
   if (!socket) connect();
   socket.emit('join', { roomCode: code });
 }
@@ -392,6 +404,15 @@ function onSend() {
   textInput.value = ''; streamingText = '';
 }
 
+/** 复制房间号到剪贴板 */
+function onCopyRoomCode() {
+  if (!joinedRoom) return;
+  navigator.clipboard.writeText(joinedRoom).then(
+    () => flashToast('已复制房间号 ' + joinedRoom),
+    () => flashToast('复制失败，请手动复制')
+  );
+}
+
 /** 顶部轻提示（自动消失） */
 function flashToast(msg) {
   let t = document.getElementById('toast');
@@ -556,11 +577,12 @@ function stopVoiceUI() {
 }
 
 /* ---------- 事件绑定 ---------- */
+createBtn.addEventListener('click', doCreate);
 joinBtn.addEventListener('click', doJoin);
-genBtn.addEventListener('click', () => { codeInput.value = genCode(); codeInput.focus(); });
 codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doJoin(); });
 leaveBtn.addEventListener('click', doLeave);
 exportBtn.addEventListener('click', onExport);
+copyBtn.addEventListener('click', onCopyRoomCode);
 sendBtn.addEventListener('click', onSend);
 textInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') onSend(); });
 anonToggle.addEventListener('change', () => { isAnonymous = anonToggle.checked; });

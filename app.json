@@ -1,5 +1,6 @@
 {
   "pages": [
+    "pages/lobby/index",
     "pages/room/index"
   ],
   "window": {
