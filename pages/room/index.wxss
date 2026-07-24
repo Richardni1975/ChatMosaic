@@ -487,7 +487,7 @@
 
 .input-row {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 16rpx;
 }
 
@@ -531,13 +531,16 @@
 .text-input {
   flex: 1;
   min-width: 0;
-  height: 80rpx;
-  padding: 0 24rpx;
+  min-height: 80rpx;
+  max-height: 280rpx;        /* 约四行，超出内部滚动，便于校对长文本 */
+  padding: 18rpx 24rpx;
   font-size: 30rpx;
+  line-height: 1.5;
   color: var(--text);
   background: var(--bg);
   border: 1rpx solid var(--border);
   border-radius: 24rpx;
+  box-sizing: border-box;
 }
 
 .send-btn {

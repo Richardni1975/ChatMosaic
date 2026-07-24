@@ -114,9 +114,9 @@
         bindtouchstart="onVoiceTouchStart" bindtouchend="onVoiceTouchEnd" bindtouchcancel="onVoiceTouchEnd">
         <text>{{recording ? '松开结束' : '按住说话'}}</text>
       </view>
-      <input class="text-input" type="text" value="{{inputText}}"
+      <textarea class="text-input" value="{{inputText}}"
         placeholder="{{streamingText || '说点什么…'}}" bindinput="onInput"
-        confirm-type="send" bindconfirm="onSend" />
+        auto-height maxlength="-1" cursor-spacing="20" adjust-position="{{true}}" />
       <view class="send-btn" bindtap="onSend">发送</view>
     </view>
   </view>
