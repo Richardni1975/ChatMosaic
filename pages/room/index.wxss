@@ -502,16 +502,16 @@
   display: flex;
   align-items: stretch;
   gap: 16rpx;
-  height: 240rpx;            /* 固定大小，不自适应 */
+  height: 360rpx;            /* 向下拓展，利用底部空间 */
 }
 
 .text-input {
   flex: 1;
   min-width: 0;
   height: 100%;
-  padding: 18rpx 24rpx;
+  padding: 20rpx 24rpx;
   font-size: 30rpx;
-  line-height: 1.5;
+  line-height: 1.6;
   color: var(--text);
   background: var(--bg);
   border: 1rpx solid var(--border);
@@ -520,10 +520,10 @@
 }
 
 .right-col {
-  flex: 0 0 144rpx;
+  flex: 0 0 160rpx;
   display: flex;
   flex-direction: column;
-  gap: 10rpx;
+  gap: 16rpx;                /* 按钮排列更疏朗 */
   height: 100%;
 }
 
