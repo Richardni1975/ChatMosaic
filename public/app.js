@@ -407,7 +407,7 @@ function flashToast(msg) {
   flashToast._timer = setTimeout(() => t.classList.remove('show'), 1800);
 }
 
-/** 一键导出：把已解密的聊天记录汇总到剪贴板 */
+/** 一键导出：把已解密的聊天记录导出为 .txt 文件下载到本地 */
 function onExport() {
   const items = messages.filter((m) => m.state === 'decrypted' && (m.body || m.imageUrl));
   if (!items.length) { flashToast('暂无可导出内容'); return; }
@@ -416,22 +416,18 @@ function onExport() {
     const content = m.imageUrl ? '[图片] ' + m.imageUrl : m.body;
     return `${head}\n${content}\n赞同 ${m.agree || 0} · 击掌 ${m.clap || 0}`;
   }).join('\n---\n');
-  const done = () => flashToast('已导出 ' + items.length + ' 条到剪贴板');
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
-  } else {
-    fallbackCopy(text, done);
-  }
-}
-
-function fallbackCopy(text, done) {
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.position = 'fixed'; ta.style.opacity = '0';
-  document.body.appendChild(ta);
-  ta.select();
-  try { document.execCommand('copy'); done(); } catch (e) { flashToast('导出失败'); }
-  ta.remove();
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  // ﻿ BOM 保证中文在记事本/Excel 不乱码
+  const blob = new Blob(['﻿' + text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `chatmosaic-${stamp}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  flashToast('已导出 ' + items.length + ' 条到本地');
 }
 
 function addDecryptedLocal(msgId, text, matchHash) {
@@ -564,14 +560,15 @@ joinBtn.addEventListener('click', doJoin);
 genBtn.addEventListener('click', () => { codeInput.value = genCode(); codeInput.focus(); });
 codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doJoin(); });
 leaveBtn.addEventListener('click', doLeave);
+exportBtn.addEventListener('click', onExport);
 sendBtn.addEventListener('click', onSend);
 textInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') onSend(); });
 anonToggle.addEventListener('change', () => { isAnonymous = anonToggle.checked; });
 
 voiceBtn.addEventListener('mousedown', (e) => { e.preventDefault(); startVoice(); });
 voiceBtn.addEventListener('mouseup', stopVoice);
-voiceBtn.addEventListener('mouseleave', stopVoice);
 window.addEventListener('mouseup', stopVoice); // 兜底：在按钮外松开也能停止
+// 不绑 mouseleave：startVoice 改 textContent 会触发 mouseleave 误停识别，window mouseup 已覆盖释放
 
 imgBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', () => {
