@@ -263,7 +263,7 @@ function handleUpload(req, res) {
 // 隐私：音频仅在内存中转给 SiliconFlow，服务端不落盘、不留存、不打印内容。
 
 const STT_URL = 'https://api.siliconflow.cn/v1/audio/transcriptions';
-const STT_MODEL = 'FunAudioLLM/SenseVoice-Small';
+const STT_MODEL = 'FunAudioLLM/SenseVoiceSmall';
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024; // 10MB
 
 const sttUpload = multer({
@@ -301,7 +301,9 @@ function handleSTT(req, res) {
     }
     try {
       const data = await callSiliconFlowSTT(f.buffer, f.originalname, f.mimetype);
-      const text = (data && typeof data.text === 'string') ? data.text : '';
+      // SenseVoice 可能输出 <|zh|><|NEUTRAL|> 等标签，剥离后返回干净文本
+      const raw = (data && typeof data.text === 'string') ? data.text : '';
+      const text = raw.replace(/<\|[^>]*\|>/g, '').trim();
       // 仅打印长度，绝不打印识别内容（无日志原则）
       console.log(`[momo-relay] STT 完成 ${f.size}B → ${text.length} 字`);
       json(res, 200, { ok: true, text });
