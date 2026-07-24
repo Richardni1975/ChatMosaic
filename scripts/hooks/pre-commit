@@ -1,0 +1,14 @@
+#!/bin/sh
+# pre-commit 钩子：提交前跑全量测试，任一失败即阻断提交，锁定现有功能不被破坏。
+# 启用：git config core.hooksPath scripts/hooks   （仓库根目录执行一次）
+
+echo "[pre-commit] 运行测试套件（matcher / cleanup / crypto / smoke）..."
+cd server && npm test
+RESULT=$?
+cd - > /dev/null
+if [ $RESULT -ne 0 ]; then
+  echo "[pre-commit] ❌ 测试未全绿，提交已阻断。修复后再提交（或紧急时 git commit --no-verify 跳过）。"
+  exit 1
+fi
+echo "[pre-commit] ✅ 测试全绿，允许提交。"
+exit 0

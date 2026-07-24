@@ -6,7 +6,7 @@
   "main": "relay.js",
   "scripts": {
     "start": "node relay.js",
-    "test": "node matcher.test.js && node cleanup.test.js"
+    "test": "node matcher.test.js && node cleanup.test.js && node ../utils/crypto.test.js && node smoke.test.js"
   },
   "dependencies": {
     "multer": "^1.4.5-lts.1",

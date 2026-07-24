@@ -152,3 +152,9 @@ function runTests() {
 }
 
 module.exports = { runTests };
+
+// 直接 `node crypto.test.js` 时自动运行并按结果退出（便于串入测试链 / 提交门禁）
+if (require.main === module) {
+  const r = runTests();
+  if (r.failed) process.exit(1);
+}
