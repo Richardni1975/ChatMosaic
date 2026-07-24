@@ -165,6 +165,13 @@ body {
 .room-tag { font-family: var(--mono); font-size: 13px; color: var(--accent); }
 .room-tag b { color: var(--text); letter-spacing: 2px; }
 
+.room-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--aux);
+  margin-right: auto;
+}
+
 /* NOISE 能量条 */
 .noise-strip {
   flex: 1;

@@ -9,9 +9,8 @@
       <text class="room-label">房间</text>
       <input class="room-input" type="number" maxlength="4" value="{{roomCode}}"
         bindconfirm="onRoomCodeChange" bindblur="onRoomCodeChange" />
-      <text class="room-hint">4 位数字房间号</text>
-      <view class="copy-btn" bindtap="onCopyRoomCode">复制</view>
-      <view class="export-btn" bindtap="onExport">导出</view>
+      <text class="room-count">{{roomCount}}/50 人在线</text>
+      <view class="export-btn" bindtap="onExport">导出聊天文本</view>
       <view class="leave-btn" bindtap="onLeaveRoom">离开</view>
     </view>
 
@@ -87,7 +86,7 @@
   <view class="zone zone-2 {{zone2Expanded ? 'expanded' : ''}}">
     <view wx:if="{{!zone2Expanded}}" class="health-bar">
       <view class="dot"></view>
-      <text>安全健康度：端到端本地分片 · 已就绪</text>
+      <text>有时，我们需要你那来路不明的发言！</text>
     </view>
     <view wx:else class="glass-panel">
       <view class="shred-stage">

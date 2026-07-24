@@ -31,6 +31,7 @@ const DECOY_PERIOD_MIN_MS = 3000;
 const DECOY_PERIOD_MAX_MS = 8000;
 const DECOY_ON_SHARD_PROB = 0.3;
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2MB
+const MAX_ROOM_SIZE = 50;                  // 单房间人数上限
 const ALLOWED_IMG_EXT = ['.jpg', '.jpeg', '.png', '.webp'];
 const ALLOWED_IMG_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 每小时扫描一次上传目录
@@ -83,18 +84,34 @@ function roomOf(roomId) {
 function joinRoom(client, roomId) {
   if (client.room) {
     const old = rooms.get(client.room);
-    if (old) old.delete(client);
+    if (old) { old.delete(client); broadcastPresence(client.room); }
+  }
+  // 人数上限检查
+  const target = roomOf(roomId);
+  if (target.size >= MAX_ROOM_SIZE) {
+    // 发送 room_full 给该客户端，不加入房间
+    client.send({ type: 'room_full', roomCode: roomId, max: MAX_ROOM_SIZE });
+    return false;
   }
   client.room = roomId;
-  roomOf(roomId).add(client);
+  target.add(client);
+  broadcastPresence(roomId);
+  return true;
 }
 
 function leaveRoom(client) {
   if (client.room) {
     const r = rooms.get(client.room);
-    if (r) r.delete(client);
+    if (r) { r.delete(client); broadcastPresence(client.room); }
     client.room = null;
   }
+}
+
+/** 向房间内广播当前在线人数 */
+function broadcastPresence(roomId) {
+  const r = rooms.get(roomId);
+  const count = r ? r.size : 0;
+  broadcastToRoom(roomId, { type: 'presence', roomCode: roomId, count });
 }
 
 /** 向房间内所有客户端（跨传输）广播，按各自传输序列化 */
@@ -145,8 +162,10 @@ function handleMessage(client, msg) {
   // 进房：原生 ws 客户端（小程序）按 roomCode 加入房间（默认 0000）
   if (msg.type === 'join') {
     const code = normalizeRoom(msg.roomCode);
-    joinRoom(client, code);
-    client.send({ type: 'joined', roomCode: code });
+    const ok = joinRoom(client, code);
+    if (ok) {
+      client.send({ type: 'joined', roomCode: code });
+    } // room_full 已在 joinRoom 内发送
     return;
   }
 
@@ -347,14 +366,16 @@ io.on('connection', (sio) => {
     room: DEFAULT_ROOM,
     send: (obj) => { sio.emit('msg', obj); },
   };
-  roomOf(DEFAULT_ROOM).add(client);
+  joinRoom(client, DEFAULT_ROOM);
   console.log(`[momo-relay] Socket.IO 连接，当前连接数 ${connections}`);
 
   sio.on('join', (payload) => {
     const code = normalizeRoom(payload && payload.roomCode);
-    joinRoom(client, code);
-    sio.emit('joined', { roomCode: code });
-    console.log(`[momo-relay] PC 加入房间 ${code}`);
+    const ok = joinRoom(client, code);
+    if (ok) {
+      sio.emit('joined', { roomCode: code });
+      console.log(`[momo-relay] PC 加入房间 ${code}`);
+    }
   });
 
   sio.on('msg', (obj) => handleMessage(client, obj));
@@ -389,7 +410,7 @@ wss.on('connection', (ws) => {
     room: DEFAULT_ROOM,
     send: (obj) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); },
   };
-  roomOf(DEFAULT_ROOM).add(client);
+  joinRoom(client, DEFAULT_ROOM);
   console.log(`[momo-relay] 小程序连接，当前连接数 ${connections}`);
 
   ws.on('message', (raw) => {

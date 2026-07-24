@@ -55,6 +55,7 @@ Page({
     isAnonymous: true,
     userName: '我',
     roomCode: '0000',
+    roomCount: 0,
     zone2Expanded: false,
     recording: false,
     shredParticles: [],
@@ -363,6 +364,19 @@ Page({
 
       if (msg.type === 'pong') return;
       if (msg.type === 'joined') return;
+
+      // 房间人数更新
+      if (msg.type === 'presence') {
+        this.setData({ roomCount: msg.count || 0 });
+        return;
+      }
+
+      // 房间已满
+      if (msg.type === 'room_full') {
+        wx.showToast({ title: '房间已满（50人上限）', icon: 'none', duration: 2500 });
+        this.onLeaveRoom();
+        return;
+      }
 
       if (msg.isDecoy) {
         this.bumpEnergy(randInt(15, 30));

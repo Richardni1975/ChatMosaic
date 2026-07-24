@@ -47,18 +47,19 @@
 }
 .room-hint { font-size: 20rpx; color: var(--aux); flex: 1; }
 
-.copy-btn,
+.room-count {
+  flex: 1;
+  font-size: 22rpx;
+  color: var(--aux);
+  font-family: "SF Mono", "Consolas", monospace;
+}
+
 .leave-btn,
 .export-btn {
   flex: 0 0 auto;
   font-size: 22rpx;
   border-radius: 10rpx;
   padding: 6rpx 16rpx;
-}
-
-.copy-btn {
-  color: var(--accent);
-  border: 1rpx solid var(--accent);
 }
 
 .export-btn {

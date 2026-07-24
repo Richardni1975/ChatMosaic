@@ -15,7 +15,8 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 const $ = (id) => document.getElementById(id);
 const lobby = $('lobby'), roomView = $('room');
 const codeInput = $('codeInput'), joinBtn = $('joinBtn'), createBtn = $('createBtn');
-const roomLabel = $('roomLabel'), leaveBtn = $('leaveBtn'), copyBtn = $('copyBtn');
+const roomLabel = $('roomLabel'), leaveBtn = $('leaveBtn');
+const roomCount = $('roomCount');
 const cardFlow = $('cardFlow');
 const textInput = $('textInput'), sendBtn = $('sendBtn'), voiceBtn = $('voiceBtn');
 const imgBtn = $('imgBtn'), fileInput = $('fileInput');
@@ -100,6 +101,7 @@ function connect() {
   socket.on('joined', ({ roomCode }) => {
     joinedRoom = roomCode;
     roomLabel.textContent = roomCode;
+    roomCount.textContent = '';
     lobby.classList.add('hidden');
     roomView.classList.remove('hidden');
     initWave();
@@ -123,6 +125,20 @@ function doLeave() {
 function handleMsg(obj) {
   if (!obj) return;
   if (obj.type === 'pong') return;
+
+  // 房间人数更新
+  if (obj.type === 'presence') {
+    roomCount.textContent = (obj.count || 0) + '/50 人在线';
+    return;
+  }
+
+  // 房间已满
+  if (obj.type === 'room_full') {
+    flashToast('房间已满（50人上限）');
+    doLeave();
+    return;
+  }
+
   if (obj.isDecoy) { bumpEnergy(randInt(15, 30)); return; }
   if (obj.type === 'shard-seen') { bumpEnergy(randInt(3, 8)); onShardSeen(obj); }
   else if (obj.type === 'assembled') { bumpEnergy(randInt(10, 20)); onAssembled(obj); }
@@ -404,15 +420,6 @@ function onSend() {
   textInput.value = ''; streamingText = '';
 }
 
-/** 复制房间号到剪贴板 */
-function onCopyRoomCode() {
-  if (!joinedRoom) return;
-  navigator.clipboard.writeText(joinedRoom).then(
-    () => flashToast('已复制房间号 ' + joinedRoom),
-    () => flashToast('复制失败，请手动复制')
-  );
-}
-
 /** 顶部轻提示（自动消失） */
 function flashToast(msg) {
   let t = document.getElementById('toast');
@@ -582,7 +589,6 @@ joinBtn.addEventListener('click', doJoin);
 codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doJoin(); });
 leaveBtn.addEventListener('click', doLeave);
 exportBtn.addEventListener('click', onExport);
-copyBtn.addEventListener('click', onCopyRoomCode);
 sendBtn.addEventListener('click', onSend);
 textInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') onSend(); });
 anonToggle.addEventListener('change', () => { isAnonymous = anonToggle.checked; });
