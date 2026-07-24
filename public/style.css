@@ -50,7 +50,7 @@ body {
 .lobby-card h1 {
   font-size: 26px;
   letter-spacing: 1px;
-  margin-bottom: 8px;
+  margin-bottom: 20px;
 }
 
 .lobby-card p { font-size: 13px; margin-bottom: 20px; }
@@ -81,11 +81,13 @@ body {
   background: var(--border);
 }
 
-.code-row { display: flex; gap: 8px; margin-bottom: 16px; }
+.code-row { display: flex; gap: 8px; margin-bottom: 16px; align-items: stretch; }
 
 .join-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
   height: 56px;
-  padding: 0 18px;
+  padding: 0 14px;
   background: var(--accent);
   color: var(--accent-deep);
   border: none;
@@ -140,6 +142,15 @@ body {
 .primary-btn:hover { filter: brightness(1.08); }
 
 .hint { font-size: 12px; margin-top: 14px; line-height: 1.6; }
+
+/* 黄色匿名宣言 */
+.slogan {
+  font-size: 13px;
+  color: #fbbf24;
+  margin-bottom: 0;
+  font-weight: 500;
+  letter-spacing: 1px;
+}
 
 .version {
   display: block;
