@@ -512,13 +512,46 @@ function punctuate(chunk) {
 }
 
 let wantStop = false; // 标记：recognition.start() 异步完成前用户已松开 → onstart 时立即停
+let micPermission = null; // null=未请求, true=已授权, false=已拒绝
 
-function startVoice() {
+/** 显式请求麦克风权限（现代 Chrome 要求先 getUserMedia 才能用 SpeechRecognition） */
+async function ensureMicPermission() {
+  if (micPermission === true) return true;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // 立即关闭音频轨道，避免占用麦克风
+    stream.getTracks().forEach((t) => t.stop());
+    micPermission = true;
+    return true;
+  } catch (e) {
+    micPermission = false;
+    console.warn('[momo] 麦克风权限被拒绝:', e.message);
+    return false;
+  }
+}
+
+async function startVoice() {
   if (recording) return;
-  if (!SR) { alert('当前浏览器不支持 Web Speech API，请使用 Chrome/Edge 并授予麦克风权限。'); return; }
+  if (!SR) {
+    flashToast('当前浏览器不支持语音识别，请使用 Chrome/Edge');
+    return;
+  }
+
+  // 先标记 recording 防止重入；wantStop 用于权限请求期间用户提前松开的场景
   recording = true;
   wantStop = false;
   voiceBtn.classList.add('recording');
+  voiceBtn.textContent = '获取权限…';
+
+  // 显式获取麦克风权限（现代 Chrome 要求先 getUserMedia 才能用 SpeechRecognition）
+  const ok = await ensureMicPermission();
+  if (!ok || wantStop) {
+    // 权限被拒、或用户在权限请求期间已松开
+    stopVoiceUI();
+    if (!ok) flashToast('需要麦克风权限才能使用语音输入，请在浏览器设置中允许');
+    return;
+  }
+
   voiceBtn.textContent = '松开结束';
 
   // 接续输入框已有文本
@@ -547,7 +580,18 @@ function startVoice() {
     recInterim = interim;
     textInput.value = recFinalText + recInterim;
   };
-  recognition.onerror = (e) => console.warn('[momo] 识别错误', e.error);
+  recognition.onerror = (e) => {
+    console.warn('[momo] 识别错误', e.error);
+    if (e.error === 'not-allowed') {
+      flashToast('麦克风权限被阻止，请在浏览器设置中允许');
+    } else if (e.error === 'no-speech') {
+      // 静默忽略——用户没有说话，正常结束
+    } else if (e.error === 'network') {
+      flashToast('语音识别需要网络连接，请检查网络');
+    } else if (e.error && e.error !== 'aborted') {
+      flashToast('语音识别错误：' + e.error);
+    }
+  };
   recognition.onend = () => {
     // 落位最终文本（含未确认的 interim，避免丢字）
     textInput.value = recFinalText + recInterim;
@@ -556,7 +600,7 @@ function startVoice() {
     textInput.placeholder = '说点什么…';
     stopVoiceUI();
   };
-  try { recognition.start(); } catch (e) { stopVoiceUI(); }
+  try { recognition.start(); } catch (e) { stopVoiceUI(); flashToast('语音识别启动失败'); }
   // 60s 强制上限，单一出口收尾
   recordTimer = setTimeout(() => {
     if (recording) { console.log('[momo] 达 60s 上限，自动停止'); wantStop = true; if (recognition) { try { recognition.stop(); } catch (e) {} } }
