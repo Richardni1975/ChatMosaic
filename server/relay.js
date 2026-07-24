@@ -224,6 +224,13 @@ function json(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
+/** 从请求头推导公网基地址，免配 PUBLIC_URL（Render/Cloudflare 会带 x-forwarded-proto/host） */
+function publicBaseFromReq(req) {
+  const proto = (req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
+  const host = req.headers['x-forwarded-host'] || req.headers['host'] || 'localhost';
+  return `${proto}://${host}`;
+}
+
 function handleUpload(req, res) {
   upload.single('file')(req, res, (err) => {
     if (err) {
@@ -240,7 +247,7 @@ function handleUpload(req, res) {
       return json(res, 400, { error: '校验失败：格式或大小不符' });
     }
 
-    const imageUrl = PUBLIC_URL + '/uploads/' + f.filename;
+    const imageUrl = (PUBLIC_URL || publicBaseFromReq(req)) + '/uploads/' + f.filename;
     const body = req.body || {};
     const roomCode = normalizeRoom(body.roomCode);
     const isAnonymous = String(body.isAnonymous) !== 'false';
@@ -420,6 +427,6 @@ httpServer.listen(PORT, () => {
   console.log(`  · PC 页面:   http://localhost:${PORT}/`);
   console.log(`  · Socket.IO: ws://localhost:${PORT}/socket.io/`);
   console.log(`  · 小程序 ws: ws://localhost:${PORT}/  (默认房间 ${DEFAULT_ROOM})`);
-  console.log(`  · 图片 URL:  ${PUBLIC_URL}/uploads/  (存活 ${MAX_AGE_HOURS}h 自动清理)`);
+  console.log(`  · 图片 URL:  ${PUBLIC_URL || '(自动从请求头推导)'}/uploads/  (存活 ${MAX_AGE_HOURS}h 自动清理)`);
   console.log(`  （纯内存 · 无日志 · 零留存 · Jitter+Decoy · 房间路由）`);
 });

@@ -26,9 +26,9 @@ const PORT = parseInt(process.env.PORT, 10) || 8080;
 module.exports = {
   // 中转服务端口
   PORT,
-  // 图片 URL 公网/局域网基地址，客户端据此拼接图片绝对地址
-  // 默认按本机端口推导；线上部署设为 https://api-mosaic.m0m0n1.top
-  PUBLIC_URL: process.env.PUBLIC_URL || `http://localhost:${PORT}`,
+  // 图片 URL 公网基地址。留空则由 relay 从请求头自动推导（推荐，免配置）。
+  // 仅当自动推导不准时才显式设为 https://chatmosaic-1.onrender.com
+  PUBLIC_URL: process.env.PUBLIC_URL || '',
   // 图片存活时长（小时），超过后由定时任务物理删除
   MAX_AGE_HOURS: parseInt(process.env.MAX_AGE_HOURS, 10) || 24,
   // 硅基流动 SiliconFlow API Key（后端接力 STT 用），填入 .env，勿提交
