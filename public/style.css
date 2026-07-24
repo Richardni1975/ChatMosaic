@@ -141,6 +141,14 @@ body {
 
 .hint { font-size: 12px; margin-top: 14px; line-height: 1.6; }
 
+.version {
+  display: block;
+  text-align: center;
+  font-size: 11px;
+  margin-top: 24px;
+  opacity: 0.6;
+}
+
 /* ===================== 房间界面 ===================== */
 
 #room { display: flex; flex-direction: column; height: 100vh; }

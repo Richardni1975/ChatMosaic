@@ -65,7 +65,7 @@
 .join-row {
   display: flex;
   gap: 12rpx;
-  margin-bottom: 22rpx;
+  margin-bottom: 16rpx;
 }
 
 .code-input {
@@ -96,9 +96,11 @@
 
 .join-btn[disabled] { opacity: 0.4; }
 
-.hint {
+.primary-btn { margin-bottom: 20rpx; }
+
+.version {
   display: block;
   text-align: center;
-  font-size: 22rpx;
-  line-height: 1.6;
+  font-size: 20rpx;
+  margin-top: 32rpx;
 }
