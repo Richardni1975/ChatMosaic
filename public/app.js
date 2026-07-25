@@ -98,10 +98,10 @@ function doJoin() {
 function connect() {
   socket = io(API_BASE || undefined, { path: '/socket.io/', transports: ['websocket', 'polling'] });
   socket.on('connect', () => console.log('[momo] Socket.IO 已连接'));
-  socket.on('joined', ({ roomCode }) => {
+  socket.on('joined', ({ roomCode, count }) => {
     joinedRoom = roomCode;
     roomLabel.textContent = roomCode;
-    roomCount.textContent = '';
+    roomCount.textContent = (count || 0) + '/50 人在线';
     lobby.classList.add('hidden');
     roomView.classList.remove('hidden');
     initWave();

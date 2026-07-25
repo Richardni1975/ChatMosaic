@@ -363,7 +363,10 @@ Page({
       try { msg = JSON.parse(res.data); } catch (e) { return; }
 
       if (msg.type === 'pong') return;
-      if (msg.type === 'joined') return;
+      if (msg.type === 'joined') {
+        if (typeof msg.count === 'number') this.setData({ roomCount: msg.count });
+        return;
+      }
 
       // 房间人数更新
       if (msg.type === 'presence') {

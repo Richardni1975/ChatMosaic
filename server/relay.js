@@ -164,7 +164,8 @@ function handleMessage(client, msg) {
     const code = normalizeRoom(msg.roomCode);
     const ok = joinRoom(client, code);
     if (ok) {
-      client.send({ type: 'joined', roomCode: code });
+      const r = rooms.get(code);
+      client.send({ type: 'joined', roomCode: code, count: r ? r.size : 0 });
     } // room_full 已在 joinRoom 内发送
     return;
   }
@@ -184,15 +185,19 @@ function handleMessage(client, msg) {
   if (msg.type !== 'shard') return;
 
   // 入站 decoy 在 matcher 内即被忽略（不建桶）；真实碎片走匹配
+  // 关键：先捕获 roomId 防止 setTimeout 闭包中 client.room 被并发 join/leave 改写
+  const roomId = client.room;
+  if (!roomId) return;
+
   const { seen, broadcast } = ingestShard(state, msg);
 
   if (seen) {
-    scheduleSend(client.room, { type: 'shard-seen', ...seen }); // 不含 data
-    if (Math.random() < DECOY_ON_SHARD_PROB) emitDecoy(client.room);
+    scheduleSend(roomId, { type: 'shard-seen', ...seen });
+    if (Math.random() < DECOY_ON_SHARD_PROB) emitDecoy(roomId);
   }
 
   if (broadcast) {
-    scheduleSend(client.room, { type: 'assembled', ...broadcast });
+    scheduleSend(roomId, { type: 'assembled', ...broadcast });
     console.log(`[momo-relay] 已中转聚合 ${state.assembledCount} 条`); // 仅计数
   }
 }
@@ -373,7 +378,8 @@ io.on('connection', (sio) => {
     const code = normalizeRoom(payload && payload.roomCode);
     const ok = joinRoom(client, code);
     if (ok) {
-      sio.emit('joined', { roomCode: code });
+      const r = rooms.get(code);
+      sio.emit('joined', { roomCode: code, count: r ? r.size : 0 });
       console.log(`[momo-relay] PC 加入房间 ${code}`);
     }
   });
