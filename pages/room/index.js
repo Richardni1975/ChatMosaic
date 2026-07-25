@@ -362,6 +362,11 @@ Page({
       let msg;
       try { msg = JSON.parse(res.data); } catch (e) { return; }
 
+      // 诊断日志：确认 WebSocket 消息到达
+      if (msg.type !== 'pong') {
+        console.log('[momo] ← recv', msg.type, msg.msgId || '', msg.count != null ? '(' + msg.count + '人)' : '');
+      }
+
       if (msg.type === 'pong') return;
       if (msg.type === 'joined') {
         if (typeof msg.count === 'number') this.setData({ roomCount: msg.count });
@@ -582,6 +587,13 @@ Page({
 
     if (this.socket && this.relayShards(msgId, fragments)) {
       this.upsertCollecting(msgId, matchHash, null);
+      // 本地兜底：不依赖服务端 assembled 回传，动画后直接展示
+      // （解决真机调试/复杂网络下 WebSocket 回传不可靠的问题）
+      this._localShowTimer = setTimeout(() => {
+        if (!this.seenIds.has(msgId)) {
+          this.addDecrypted(msgId, body, matchHash, '匿名发言');
+        }
+      }, 1200);
     } else {
       console.warn('[momo] 中转未连接，本地直接展示');
       this.addDecrypted(msgId, body, matchHash, '匿名发言');
@@ -639,6 +651,7 @@ Page({
 
   uploadImage(filePath) {
     const url = clientConfig.httpBase + '/upload';
+    const that = this;
     wx.uploadFile({
       url,
       filePath,
@@ -648,7 +661,22 @@ Page({
         userName: this.data.userName,
         isAnonymous: this.data.isAnonymous ? 'true' : 'false',
       },
-      success: (res) => console.log('[momo] 图片上传成功', res.data),
+      success: (res) => {
+        console.log('[momo] 图片上传成功', res.data);
+        // 本机立即显示图片，不依赖 WebSocket 回传
+        try {
+          const data = JSON.parse(res.data);
+          if (data.ok && data.imageUrl) {
+            const msgId = 'img-local-' + Date.now().toString(36);
+            that.onImage({
+              msgId,
+              imageUrl: data.imageUrl,
+              userName: that.data.userName,
+              isAnonymous: that.data.isAnonymous,
+            });
+          }
+        } catch (e) { /* 解析失败不阻塞 */ }
+      },
       fail: (err) => {
         console.warn('[momo] 图片上传失败', err);
         wx.showToast({ title: '上传失败', icon: 'none' });
@@ -658,6 +686,8 @@ Page({
 
   /** 收到图片广播：仅 URL，二进制未走 WebSocket */
   onImage(evt) {
+    // 按 imageUrl 去重（本机已本地显示时，WebSocket 回传不再重复添加）
+    if (this.seenIds && this.seenIds.has(evt.msgId)) return;
     const isAnon = evt.isAnonymous !== false;
     const card = {
       id: evt.msgId, msgId: evt.msgId, state: 'decrypted',
@@ -666,6 +696,8 @@ Page({
       agree: 0, clap: 0, agreed: false, trust: false,
       slots: emptySlots(), count: 0, hashTag: '',
     };
+    this.seenIds = this.seenIds || new Set();
+    this.seenIds.add(evt.msgId);
     const messages = [card].concat(this.data.messages);
     this.setData({ messages }, () => this.applyFilter());
   },
@@ -680,6 +712,8 @@ Page({
   onAssembled(evt) {
     const { msgId, matchHash, fragments } = evt;
     if (this.seenIds.has(msgId)) return;
+    // 清除本地兜底计时器（若服务端 assembled 先到）
+    if (this._localShowTimer) { clearTimeout(this._localShowTimer); this._localShowTimer = null; }
     this.seenIds.add(msgId);
 
     this.fillCollecting(msgId, matchHash, fragments);
