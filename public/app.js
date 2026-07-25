@@ -126,6 +126,12 @@ function handleMsg(obj) {
   if (!obj) return;
   if (obj.type === 'pong') return;
 
+  // 历史消息（进房时推送）
+  if (obj.type === 'history') {
+    if (Array.isArray(obj.messages)) onHistory(obj.messages);
+    return;
+  }
+
   // 房间人数更新
   if (obj.type === 'presence') {
     roomCount.textContent = (obj.count || 0) + '/50 人在线';
@@ -238,6 +244,45 @@ function patchSlots(el, d) {
 
 function escapeHTML(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+/* ---------- 历史消息回放 ---------- */
+
+function onHistory(list) {
+  const existingIds = new Set(messages.map((m) => m.msgId));
+  list.forEach((m) => {
+    if (existingIds.has(m.msgId)) return;
+    existingIds.add(m.msgId);
+    seenIds.add(m.msgId);
+    if (m.type === 'anonymous') {
+      const data = {
+        msgId: m.msgId, state: 'decrypted', isAnonymous: true, userName: '',
+        matchHash: m.matchHash, hashTag: shortHash(m.matchHash),
+        topic: '匿名发言', body: m.body || '',
+        agree: m.agree || 0, clap: m.clap || 0,
+        agreed: false, trust: true, slots: [], count: 4,
+      };
+      paintCard(data);
+    } else if (m.type === 'direct') {
+      const data = {
+        msgId: m.msgId, state: 'decrypted', isAnonymous: false,
+        userName: m.userName || '', topic: '', body: m.body || '',
+        agree: 0, clap: 0, agreed: false, trust: false,
+        slots: [], count: 0, hashTag: '',
+      };
+      paintCard(data);
+    } else if (m.type === 'image') {
+      const data = {
+        msgId: m.msgId, state: 'decrypted',
+        isAnonymous: m.isAnonymous !== false,
+        userName: m.userName || '', imageUrl: m.imageUrl,
+        topic: m.isAnonymous !== false ? '匿名图片' : '', body: '',
+        agree: 0, clap: 0, agreed: false, trust: false,
+        slots: [], count: 0, hashTag: '',
+      };
+      paintCard(data);
+    }
+  });
 }
 
 /* ---------- collecting / assembled / direct 处理 ---------- */

@@ -21,6 +21,7 @@ const multer = require('multer');
 const { WebSocket, WebSocketServer } = require('ws');
 const { Server } = require('socket.io');
 const { createState, ingestShard, expireBuckets, jitterDelay } = require('./matcher.js');
+const crypto = require('../utils/crypto.js');
 const config = require('./config.js');
 const { cleanupOldFiles } = require('./cleanup.js');
 
@@ -36,6 +37,10 @@ const ALLOWED_IMG_EXT = ['.jpg', '.jpeg', '.png', '.webp'];
 const ALLOWED_IMG_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 每小时扫描一次上传目录
 const MAX_IMAGE_AGE_MS = MAX_AGE_HOURS * 60 * 60 * 1000; // 默认 24h
+
+const MAX_HISTORY = 500;                 // 单房间最多保留消息数
+const HISTORY_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 消息留存 7 天
+const HISTORY_SWEEP_MS = 10 * 60 * 1000; // 每 10 分钟清理过期消息
 
 const CHANNELS = ['ch0', 'ch1', 'ch2', 'ch3'];
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -53,7 +58,8 @@ const MIME = {
 };
 
 const state = createState();
-const rooms = new Map(); // roomId -> Set<client>
+const rooms = new Map();            // roomId -> Set<client>
+const roomHistory = new Map();      // roomId -> Array<message>
 let connections = 0;
 let decoyCount = 0;
 
@@ -114,6 +120,40 @@ function broadcastPresence(roomId) {
   broadcastToRoom(roomId, { type: 'presence', roomCode: roomId, count });
 }
 
+/* ---------- 房间消息历史（纯内存，7 天留存，匿名无身份映射） ---------- */
+
+/** 向房间历史追加一条已解密的明文消息 */
+function appendHistory(roomId, msg) {
+  if (!roomId) return;
+  let hist = roomHistory.get(roomId);
+  if (!hist) { hist = []; roomHistory.set(roomId, hist); }
+  // 每个消息打上服务端时间戳（客户端时间不可信）
+  const record = Object.assign({ _serverTs: Date.now() }, msg);
+  hist.push(record);
+  // 超过容量上限则丢弃最旧的
+  while (hist.length > MAX_HISTORY) hist.shift();
+}
+
+/** 清理所有房间的过期消息 */
+function sweepHistory() {
+  const cutoff = Date.now() - HISTORY_TTL_MS;
+  for (const [roomId, hist] of roomHistory) {
+    const fresh = hist.filter((m) => m._serverTs > cutoff);
+    if (fresh.length === 0) roomHistory.delete(roomId);
+    else if (fresh.length !== hist.length) roomHistory.set(roomId, fresh);
+  }
+}
+
+/** 获取房间历史（返回不含 _serverTs 字段的副本） */
+function getHistory(roomId) {
+  const hist = roomHistory.get(roomId);
+  if (!hist || hist.length === 0) return [];
+  const cutoff = Date.now() - HISTORY_TTL_MS;
+  return hist
+    .filter((m) => m._serverTs > cutoff)
+    .map(({ _serverTs, ...rest }) => rest);
+}
+
 /** 向房间内所有客户端（跨传输）广播，按各自传输序列化 */
 function broadcastToRoom(roomId, obj) {
   const r = rooms.get(roomId);
@@ -166,6 +206,9 @@ function handleMessage(client, msg) {
     if (ok) {
       const r = rooms.get(code);
       client.send({ type: 'joined', roomCode: code, count: r ? r.size : 0 });
+      // 推送近 7 天历史消息
+      const hist = getHistory(code);
+      if (hist.length > 0) client.send({ type: 'history', messages: hist });
     } // room_full 已在 joinRoom 内发送
     return;
   }
@@ -179,6 +222,11 @@ function handleMessage(client, msg) {
   // 实名直发：跳过 matcher 与 Jitter，直接透传至本房间，无日志
   if (msg.type === 'direct_msg') {
     broadcastToRoom(client.room, msg);
+    appendHistory(client.room, {
+      type: 'direct', msgId: msg.msgId,
+      body: msg.text, userName: msg.userName,
+      isAnonymous: false, timestamp: Date.now(),
+    });
     return;
   }
 
@@ -198,6 +246,15 @@ function handleMessage(client, msg) {
 
   if (broadcast) {
     scheduleSend(roomId, { type: 'assembled', ...broadcast });
+    // 记录到历史（匿名发言，不绑定身份）
+    try {
+      const body = crypto.combineMessage(broadcast.fragments);
+      appendHistory(roomId, {
+        type: 'anonymous', msgId: broadcast.msgId,
+        body, matchHash: broadcast.matchHash,
+        agree: 0, clap: 0, timestamp: Date.now(),
+      });
+    } catch (e) { /* 解密失败静默跳过 */ }
     console.log(`[momo-relay] 已中转聚合 ${state.assembledCount} 条`); // 仅计数
   }
 }
@@ -285,6 +342,11 @@ function handleUpload(req, res) {
     };
     // 仅广播图片 URL（小 JSON），二进制已落盘 public/uploads/，绝不走 WebSocket
     broadcastToRoom(roomCode, payload);
+    appendHistory(roomCode, {
+      type: 'image', msgId: payload.msgId,
+      imageUrl, userName: body.userName || '',
+      isAnonymous, timestamp: Date.now(),
+    });
     console.log(`[momo-relay] 图片上传 ${imageUrl} → 房间 ${roomCode}（${f.size}B）`);
     json(res, 200, { ok: true, imageUrl });
   });
@@ -380,6 +442,9 @@ io.on('connection', (sio) => {
     if (ok) {
       const r = rooms.get(code);
       sio.emit('joined', { roomCode: code, count: r ? r.size : 0 });
+      // 推送近 7 天历史消息
+      const hist = getHistory(code);
+      if (hist.length > 0) sio.emit('msg', { type: 'history', messages: hist });
       console.log(`[momo-relay] PC 加入房间 ${code}`);
     }
   });
@@ -448,6 +513,9 @@ runCleanup(); // 启动即清理一次
 
 // 启动周期 decoy 注入
 schedulePeriodicDecoy();
+
+// 周期清理过期消息历史（每 10 分钟）
+setInterval(sweepHistory, HISTORY_SWEEP_MS);
 
 httpServer.listen(PORT, () => {
   console.log(`[momo-relay] 中转服务已启动，端口 ${PORT}`);

@@ -373,6 +373,12 @@ Page({
         return;
       }
 
+      // 历史消息（进房时推送）
+      if (msg.type === 'history') {
+        if (Array.isArray(msg.messages)) this.onHistory(msg.messages);
+        return;
+      }
+
       // 房间人数更新
       if (msg.type === 'presence') {
         this.setData({ roomCount: msg.count || 0 });
@@ -700,6 +706,52 @@ Page({
     this.seenIds.add(evt.msgId);
     const messages = [card].concat(this.data.messages);
     this.setData({ messages }, () => this.applyFilter());
+  },
+
+  /* ---------------- 历史消息回放 ---------------- */
+
+  onHistory(messages) {
+    const cards = messages.map((m) => {
+      if (m.type === 'anonymous') {
+        return {
+          id: m.msgId, msgId: m.msgId, state: 'decrypted',
+          isAnonymous: true, userName: '',
+          matchHash: m.matchHash, hashTag: shortHash(m.matchHash),
+          topic: '匿名发言', body: m.body,
+          agree: m.agree || 0, clap: m.clap || 0,
+          agreed: false, trust: true,
+          slots: emptySlots(), count: 4,
+        };
+      } else if (m.type === 'direct') {
+        return {
+          id: m.msgId, msgId: m.msgId, state: 'decrypted',
+          isAnonymous: false, userName: m.userName || '',
+          topic: '', body: m.body || '',
+          agree: 0, clap: 0, agreed: false, trust: false,
+          slots: emptySlots(), count: 0, hashTag: '',
+        };
+      } else if (m.type === 'image') {
+        return {
+          id: m.msgId, msgId: m.msgId, state: 'decrypted',
+          isAnonymous: m.isAnonymous !== false,
+          userName: m.userName || '',
+          imageUrl: m.imageUrl, topic: m.isAnonymous !== false ? '匿名图片' : '', body: '',
+          agree: 0, clap: 0, agreed: false, trust: false,
+          slots: emptySlots(), count: 0, hashTag: '',
+        };
+      }
+      return null;
+    }).filter(Boolean);
+
+    // 去重：跳过已存在的 msgId
+    const existingIds = new Set(this.data.messages.map((c) => c.msgId));
+    const newCards = cards.filter((c) => !existingIds.has(c.msgId));
+
+    if (newCards.length > 0) {
+      newCards.forEach((c) => this.seenIds.add(c.msgId));
+      const messages = newCards.concat(this.data.messages);
+      this.setData({ messages }, () => this.applyFilter());
+    }
   },
 
   /* ---------------- Phase 3：接收 = 收集 → 合体 → 解密 ---------------- */
