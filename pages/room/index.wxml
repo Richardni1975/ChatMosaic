@@ -104,13 +104,13 @@
         placeholder="{{streamingText || '说点什么…'}}" bindinput="onInput"
         maxlength="-1" cursor-spacing="20" adjust-position="{{true}}" />
       <view class="right-col">
-        <view class="r-btn img-btn" bindtap="onChooseImage">📷</view>
+        <view class="r-btn send-btn" bindtap="onSend">发送</view>
         <view class="r-btn anon-btn {{isAnonymous ? 'on' : 'off'}}" bindtap="toggleAnonymous">匿名</view>
         <view class="r-btn voice-btn {{recording ? 'recording' : ''}}"
           bindtouchstart="onVoiceTouchStart" bindtouchend="onVoiceTouchEnd" bindtouchcancel="onVoiceTouchEnd">
           {{recording ? '松开' : '按住说话'}}
         </view>
-        <view class="r-btn send-btn" bindtap="onSend">发送</view>
+        <view class="r-btn img-btn" bindtap="onChooseImage">📷</view>
       </view>
     </view>
   </view>
