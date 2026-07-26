@@ -13,7 +13,7 @@ const DEV = {
 
 const PROD = {
   // 公网 WSS：小程序真机必须 wss://
-  relayUrl: 'wss://chatmosaic-1.onrender.com/socket',
+  relayUrl: 'wss://chatmosaic-1.onrender.com',
   // 公网 HTTPS：图片上传/HTTP 接口
   httpBase: 'https://chatmosaic-1.onrender.com',
 };
