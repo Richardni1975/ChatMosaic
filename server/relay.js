@@ -213,9 +213,9 @@ function handleMessage(client, msg) {
     return;
   }
 
-  // 心跳保活：静默回复 pong（仅回发送者，不广播、不日志）
+  // 心跳保活：回复 pong，附带服务端视角的房间号便于诊断
   if (msg.type === 'ping') {
-    client.send({ type: 'pong' });
+    client.send({ type: 'pong', room: client.room || '(none)', connections });
     return;
   }
 

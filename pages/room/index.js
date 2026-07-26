@@ -343,13 +343,15 @@ Page({
     this.socket = socket;
 
     socket.onOpen(() => {
-      console.log('[momo] 中转已连接', RELAY_URL);
+      console.log('[momo] ✅ 中转已连接', RELAY_URL, '→ 加入房间', this.data.roomCode);
       this.reconnectAttempts = 0;
       this.startHeartbeat();
       this.sendJoin(this.data.roomCode);
     });
 
-    socket.onError((err) => console.warn('[momo] ws 异常', err && err.errMsg));
+    socket.onError((err) => {
+      console.error('[momo] ❌ ws 错误', JSON.stringify(err));
+    });
 
     socket.onClose((info) => {
       console.warn('[momo] ws 关闭 code=', info && info.code, 'reason=', info && info.reason, 'wasClean=', info && info.wasClean);
@@ -367,7 +369,11 @@ Page({
         console.log('[momo] ← recv', msg.type, msg.msgId || '', msg.count != null ? '(' + msg.count + '人)' : '');
       }
 
-      if (msg.type === 'pong') return;
+      if (msg.type === 'pong') {
+        // 诊断：确认 WebSocket 连通 + 服务端视角的房间号
+        console.log('[momo] ← pong 房间=', msg.room, ' 总连接数=', msg.connections);
+        return;
+      }
       if (msg.type === 'joined') {
         if (typeof msg.count === 'number') this.setData({ roomCount: msg.count });
         return;
