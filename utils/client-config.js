@@ -5,16 +5,12 @@
 const USE_PROD = true;
 
 const DEV = {
-  // 原生 ws 中转地址
-  relayUrl: 'ws://localhost:8080',
-  // 图片上传 HTTP 基地址
+  // Socket.IO / HTTP 基地址
   httpBase: 'http://localhost:8080',
 };
 
 const PROD = {
-  // 公网 WSS：小程序真机必须 wss://
-  relayUrl: 'wss://chatmosaic-1.onrender.com',
-  // 公网 HTTPS：图片上传/HTTP 接口
+  // 公网 HTTPS：Socket.IO / 图片上传 / HTTP 接口共用
   httpBase: 'https://chatmosaic-1.onrender.com',
 };
 

@@ -5,16 +5,11 @@ const crypto = require('../../utils/crypto.js'); // Phase 2 客户端 XOR 分片
 const delay = require('../../utils/delay.js');   // Phase 4 stub
 const profanity = require('../../utils/profanity.js'); // 客户端本地侮辱性言论过滤
 const clientConfig = require('../../utils/client-config.js'); // 开发/生产地址切换
+const socketIO = require('../../utils/socket-io.js'); // Socket.IO 客户端适配器
 
-// Phase 2：WebSocket 中转服务地址（由 utils/client-config.js 统一配置）
-// 本地：ws://localhost:8080；生产：wss://api-mosaic.m0m0n1.top/socket
-const RELAY_URL = clientConfig.relayUrl;
-
-// WebSocket 生命周期参数
-const HEARTBEAT_INTERVAL_MS = 15000;   // 心跳保活间隔
-const MAX_RECONNECT = 6;               // 最大重连次数
-const RECONNECT_BASE_DELAY_MS = 2000;  // 重连基础延迟（指数退避）
-const RECONNECT_MAX_DELAY_MS = 30000;  // 重连延迟上限
+// Socket.IO 服务端基地址（HTTP，适配器内部自动转 WSS）
+// 本地：http://localhost:8080；生产：https://chatmosaic-1.onrender.com
+const SIO_URL = clientConfig.httpBase;
 
 // 录音参数：60s 上限，对齐微信「按住说话」语音消息时长
 const MAX_RECORD_MS = 60000;
@@ -67,8 +62,6 @@ Page({
   onLoad(options) {
     this.applyFilter();
     this.seenIds = new Set();
-    this.reconnectAttempts = 0;
-    this.manualClose = false;
 
     // 从 lobby 接收房间号（query 参数）；无参数或非法时回退默认 0000
     const roomCode = (options && options.roomCode && /^\d{4}$/.test(options.roomCode))
@@ -325,107 +318,115 @@ Page({
 
   /* ---------------- Phase 2：中转连接 ---------------- */
 
+  /* ---------------- Socket.IO 连接（与 PC 端同一协议，消除跨端传输不兼容） ---------------- */
+
   connectRelay() {
-    if (this.socket && (this.socket.readyState === 0 || this.socket.readyState === 1)) {
-      return;
-    }
-    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
-    this.manualClose = false;
+    if (this.socket && this.socket.connected) return;
 
-    let socket;
-    try {
-      socket = wx.connectSocket({ url: RELAY_URL });
-    } catch (e) {
-      console.warn('[momo] connectSocket 失败，降级为本地展示', e.message);
-      this.scheduleReconnect();
-      return;
-    }
-    this.socket = socket;
+    console.log('[momo] Socket.IO 连接中…', SIO_URL);
+    const sio = socketIO.connect(SIO_URL);
+    this.socket = sio;
 
-    socket.onOpen(() => {
-      console.log('[momo] ✅ 中转已连接', RELAY_URL, '→ 加入房间', this.data.roomCode);
-      this.reconnectAttempts = 0;
-      this.startHeartbeat();
-      this.sendJoin(this.data.roomCode);
+    // 连接成功后立即加入房间
+    const onConnected = () => {
+      console.log('[momo] ✅ Socket.IO 已连接 → 加入房间', this.data.roomCode);
+      sio.emit('join', { roomCode: this.data.roomCode });
+    };
+
+    // 收到 joined 确认
+    sio.on('joined', (data) => {
+      console.log('[momo] ← joined 房间=', data.roomCode, '人数=', data.count);
+      if (typeof data.count === 'number') this.setData({ roomCount: data.count });
     });
 
-    socket.onError((err) => {
-      console.error('[momo] ❌ ws 错误', JSON.stringify(err));
-    });
+    // 收到历史消息
+    sio.on('msg', (msg) => this._handleMsg(msg));
 
-    socket.onClose((info) => {
-      console.warn('[momo] ws 关闭 code=', info && info.code, 'reason=', info && info.reason, 'wasClean=', info && info.wasClean);
-      this.stopHeartbeat();
-      this.socket = null;
-      if (!this.manualClose) this.scheduleReconnect();
-    });
-
-    socket.onMessage((res) => {
-      let msg;
-      try { msg = JSON.parse(res.data); } catch (e) { return; }
-
-      // 诊断日志：确认 WebSocket 消息到达
-      if (msg.type !== 'pong') {
-        console.log('[momo] ← recv', msg.type, msg.msgId || '', msg.count != null ? '(' + msg.count + '人)' : '');
-      }
-
-      if (msg.type === 'pong') {
-        // 诊断：确认 WebSocket 连通 + 服务端视角的房间号
-        console.log('[momo] ← pong 房间=', msg.room, ' 总连接数=', msg.connections);
-        return;
-      }
-      if (msg.type === 'joined') {
-        if (typeof msg.count === 'number') this.setData({ roomCount: msg.count });
-        return;
-      }
-
-      // 历史消息（进房时推送）
-      if (msg.type === 'history') {
-        if (Array.isArray(msg.messages)) this.onHistory(msg.messages);
-        return;
-      }
-
-      // 房间人数更新
-      if (msg.type === 'presence') {
-        this.setData({ roomCount: msg.count || 0 });
-        return;
-      }
-
-      // 房间已满
-      if (msg.type === 'room_full') {
-        wx.showToast({ title: '房间已满（50人上限）', icon: 'none', duration: 2500 });
-        this.onLeaveRoom();
-        return;
-      }
-
-      if (msg.isDecoy) {
-        this.bumpEnergy(randInt(15, 30));
-        return;
-      }
-
-      console.log('[momo] ← recv', msg.type, msg.msgId || '');
-
-      try {
-        if (msg.type === 'shard-seen') {
-          this.bumpEnergy(randInt(3, 8));
-          this.onShardSeen(msg);
-        } else if (msg.type === 'assembled') {
-          this.bumpEnergy(randInt(10, 20));
-          this.onAssembled(msg);
-        } else if (msg.type === 'direct_msg') {
-          this.onDirectMsg(msg);
-        } else if (msg.type === 'image') {
-          this.onImage(msg);
+    // 定时检查连接（Socket.IO 适配器内部有重连，这里做兜底检测）
+    this._connCheck = setInterval(() => {
+      if (!this.socket || !this.socket.connected) {
+        if (!this.socket) {
+          console.log('[momo] Socket.IO 断开，重新连接…');
+          this.connectRelay();
         }
-      } catch (e) {
-        console.error('[momo] 处理消息异常', msg.type, e.message);
       }
-    });
+    }, 5000);
+
+    // 首次连接：适配器握手完成后才能 emit
+    this._connReady = setInterval(() => {
+      if (sio.connected) {
+        clearInterval(this._connReady);
+        this._connReady = null;
+        onConnected();
+      }
+    }, 200);
+
+    // 10 秒超时——握手可能失败
+    setTimeout(() => {
+      if (this._connReady) {
+        clearInterval(this._connReady);
+        this._connReady = null;
+        if (!sio.connected) {
+          console.warn('[momo] Socket.IO 握手超时，重试…');
+          this.teardownRelay();
+          this.connectRelay();
+        }
+      }
+    }, 10000);
+  },
+
+  /** 统一消息处理（替代原生 ws 的 onMessage） */
+  _handleMsg(msg) {
+    if (!msg) return;
+
+    console.log('[momo] ← recv', msg.type, msg.msgId || '', msg.count != null ? '(' + msg.count + '人)' : '');
+
+    if (msg.type === 'joined') {
+      if (typeof msg.count === 'number') this.setData({ roomCount: msg.count });
+      return;
+    }
+
+    if (msg.type === 'history') {
+      if (Array.isArray(msg.messages)) this.onHistory(msg.messages);
+      return;
+    }
+
+    if (msg.type === 'presence') {
+      this.setData({ roomCount: msg.count || 0 });
+      return;
+    }
+
+    if (msg.type === 'room_full') {
+      wx.showToast({ title: '房间已满（50人上限）', icon: 'none', duration: 2500 });
+      this.onLeaveRoom();
+      return;
+    }
+
+    if (msg.isDecoy) {
+      this.bumpEnergy(randInt(15, 30));
+      return;
+    }
+
+    try {
+      if (msg.type === 'shard-seen') {
+        this.bumpEnergy(randInt(3, 8));
+        this.onShardSeen(msg);
+      } else if (msg.type === 'assembled') {
+        this.bumpEnergy(randInt(10, 20));
+        this.onAssembled(msg);
+      } else if (msg.type === 'direct_msg') {
+        this.onDirectMsg(msg);
+      } else if (msg.type === 'image') {
+        this.onImage(msg);
+      }
+    } catch (e) {
+      console.error('[momo] 处理消息异常', msg.type, e.message);
+    }
   },
 
   sendJoin(roomCode) {
-    if (this.socket && this.socket.readyState === 1) {
-      this.socket.send({ data: JSON.stringify({ type: 'join', roomCode }) });
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('join', { roomCode });
     }
   },
 
@@ -460,49 +461,14 @@ Page({
     wx.showToast({ title: '已进入房间 ' + code, icon: 'none' });
   },
 
-  /* ---------------- 心跳保活 ---------------- */
-
-  startHeartbeat() {
-    this.stopHeartbeat();
-    this.heartbeatTimer = setInterval(() => {
-      if (this.socket && this.socket.readyState === 1) {
-        try { this.socket.send({ data: JSON.stringify({ type: 'ping' }) }); } catch (e) {}
-      }
-    }, HEARTBEAT_INTERVAL_MS);
-  },
-
-  stopHeartbeat() {
-    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
-  },
-
-  /* ---------------- 断线重连（指数退避 + 上限） ---------------- */
-
-  scheduleReconnect() {
-    if (this.manualClose) return;
-    if (this.reconnectAttempts >= MAX_RECONNECT) {
-      console.warn('[momo] 达到最大重连次数 ' + MAX_RECONNECT + '，停止重连，UI 维持本地展示');
-      return;
-    }
-    const delay = Math.min(
-      RECONNECT_BASE_DELAY_MS * Math.pow(2, this.reconnectAttempts),
-      RECONNECT_MAX_DELAY_MS,
-    );
-    this.reconnectAttempts++;
-    console.log('[momo] 第 ' + this.reconnectAttempts + ' 次重连，' + delay + 'ms 后尝试');
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.connectRelay();
-    }, delay);
-  },
-
   /* ---------------- 优雅销毁 ---------------- */
 
   teardownRelay() {
-    this.manualClose = true;
-    this.stopHeartbeat();
-    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+    if (this._connCheck) { clearInterval(this._connCheck); this._connCheck = null; }
+    if (this._connReady) { clearInterval(this._connReady); this._connReady = null; }
+    if (this._localShowTimer) { clearTimeout(this._localShowTimer); this._localShowTimer = null; }
     if (this.socket) {
-      try { this.socket.close(); } catch (e) {}
+      try { this.socket.disconnect(); } catch (e) {}
       this.socket = null;
     }
   },
@@ -512,13 +478,13 @@ Page({
   },
 
   relayShards(msgId, fragments) {
-    if (!this.socket) return false;
+    if (!this.socket || !this.socket.connected) return false;
     fragments.forEach((f, i) => {
       const shard = {
         type: 'shard', msgId, matchHash: f.matchHash,
         index: f.index, channel: CHANNELS[i], data: f.data, preview: f.preview,
       };
-      this.socket.send({ data: JSON.stringify(shard) });
+      this.socket.emit('msg', shard);
     });
     return true;
   },
@@ -565,8 +531,8 @@ Page({
         isAnonymous: false,
         timestamp: Date.now(),
       };
-      if (this.socket) {
-        this.socket.send({ data: JSON.stringify(direct) });
+      if (this.socket && this.socket.connected) {
+        this.socket.emit('msg', direct);
       } else {
         console.warn('[momo] 中转未连接，实名消息仅本地展示');
       }
