@@ -36,6 +36,8 @@ function connect(url, opts) {
 
   let polling = false;       // GET long-poll 是否在途
   let posting = false;       // POST 是否在途
+  let pollTask = null;       // 当前 GET 的 RequestTask（用于 abort）
+  let pollGen = 0;           // GET 代号：abort/重连时 ++，让在途回调过期
   const sendQueue = [];      // 待发送的 packet（串行 POST，支持批量）
 
   function on(evt, fn) {
@@ -72,6 +74,9 @@ function connect(url, opts) {
     const batch = sendQueue.splice(0, sendQueue.length);
     const body = batch.join(RECORD_SEP);
     posting = true;
+    // 注意：不能 abort 当前 GET！engine.io polling 的 GET req 若被客户端中断，
+    // 服务端触发 "poll connection closed prematurely" → transport error → 关闭 session。
+    // GET 与 POST 必须并发，由服务端 long-poll 机制保证。
     wx.request({
       url: base + path + '?EIO=' + EIO_VERSION + '&transport=polling&sid=' + mySid,
       method: 'POST',
@@ -81,16 +86,12 @@ function connect(url, opts) {
       success: (res) => {
         posting = false;
         if (disposed || sid !== mySid) return;
-        if (res.statusCode !== 200) {
-          // 400 通常是 sid 失效，触发重连
-          if (res.statusCode === 400) scheduleReconnect();
-        }
+        if (res.statusCode === 400) { scheduleReconnect(); return; }
         flushSend();
       },
       fail: () => {
         posting = false;
         if (disposed || sid !== mySid) return;
-        // POST 失败不直接重连，pollLoop 兜底；但把 packet 丢回队列重试一次
         if (sendQueue.length === 0) {
           sendQueue.unshift(...batch);
           setTimeout(flushSend, 1000);
@@ -100,21 +101,27 @@ function connect(url, opts) {
   }
 
   /* ---- 接收（GET long-poll 循环）---- */
+  function abortPoll() {
+    polling = false;
+    pollGen++; // 让在途 GET 的回调过期（myGen !== pollGen）
+    if (pollTask) { try { pollTask.abort(); } catch (e) {} pollTask = null; }
+  }
+  function resumePoll() {
+    if (!posting && !polling && !disposed && sid) pollLoop();
+  }
   function pollLoop() {
     if (disposed || !sid || polling) return;
     const mySid = sid;
+    const myGen = pollGen;
     polling = true;
-    wx.request({
+    pollTask = wx.request({
       url: base + path + '?EIO=' + EIO_VERSION + '&transport=polling&sid=' + mySid,
       method: 'GET',
       timeout: 35000, // > 服务端 long-poll hold(~25s)
       success: (res) => {
-        polling = false;
-        if (disposed || sid !== mySid) return;
-        if (res.statusCode !== 200) {
-          scheduleReconnect();
-          return;
-        }
+        polling = false; pollTask = null;
+        if (disposed || sid !== mySid || myGen !== pollGen) return; // 过期（被 abort 或重连）
+        if (res.statusCode !== 200) { scheduleReconnect(); return; }
         const body = typeof res.data === 'string' ? res.data : '';
         if (body) {
           const pkts = body.split(RECORD_SEP);
@@ -123,8 +130,8 @@ function connect(url, opts) {
         pollLoop(); // 立即发起下一轮
       },
       fail: () => {
-        polling = false;
-        if (disposed || sid !== mySid) return;
+        polling = false; pollTask = null;
+        if (disposed || sid !== mySid || myGen !== pollGen) return; // 主动 abort，不重连
         scheduleReconnect();
       },
     });
@@ -239,9 +246,9 @@ function connect(url, opts) {
     if (disposed) return;
     if (reconnectTimer) return;
     open = false;
+    abortPoll();           // 中断在途 GET
     // 清 sid：在途的 GET/POST 响应回来时 sid!==mySid 会被丢弃
     sid = null;
-    polling = false;
     posting = false;
     sendQueue.length = 0;
     console.log('[socket-io] 3s 后重连…');
@@ -255,8 +262,8 @@ function connect(url, opts) {
     disposed = true;
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     open = false;
+    abortPoll();
     sid = null;
-    polling = false;
     posting = false;
     sendQueue.length = 0;
     Object.keys(handlers).forEach((k) => { delete handlers[k]; });

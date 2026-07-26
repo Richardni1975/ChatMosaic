@@ -370,6 +370,9 @@ function addDirectLocal(msgId, text, who) {
 /* ---------------- 图片上传（HTTP，独立于 WebSocket） ---------------- */
 
 function onImage(evt) {
+  if (seenIds.has(evt.msgId)) return; // 去重：本机已本地显示则跳过广播回传
+  seenIds.add(evt.msgId);
+  console.log('[momo] ← image', evt.msgId, evt.imageUrl);
   const isAnon = evt.isAnonymous !== false;
   const data = {
     msgId: evt.msgId, state: 'decrypted', isAnonymous: isAnon, userName: evt.userName || '',
@@ -405,6 +408,7 @@ async function compressImage(file) {
 
 async function uploadImage(file) {
   try {
+    console.log('[momo] 图片上传开始, room=', joinedRoom, '大小=', file.size);
     const blob = await compressImage(file);
     const fd = new FormData();
     fd.append('file', blob, 'img.' + (blob.type === 'image/png' ? 'png' : 'jpg'));
@@ -414,8 +418,11 @@ async function uploadImage(file) {
     const res = await fetch(API_BASE + '/upload', { method: 'POST', body: fd });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || '上传失败');
-    console.log('[momo] 图片上传成功', data.imageUrl);
+    console.log('[momo] 图片上传成功', data.imageUrl, 'msgId=', data.msgId);
+    // 本地立即显示（复用服务端 msgId，随后广播到达时 seenIds 去重）
+    onImage({ msgId: data.msgId, imageUrl: data.imageUrl, userName, isAnonymous });
   } catch (e) {
+    console.error('[momo] 图片上传失败', e.message);
     alert('图片上传失败：' + e.message);
   }
 }

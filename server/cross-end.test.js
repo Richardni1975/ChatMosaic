@@ -49,6 +49,7 @@ function installWxMock() {
       if (opts.timeout) req.setTimeout(opts.timeout, () => { req.destroy(); if (opts.fail) opts.fail({ errMsg: 'request:fail timeout' }); });
       if (bodyData) req.write(bodyData);
       req.end();
+      return { abort: () => { try { req.destroy(); } catch (e) {} } }; // 模拟 RequestTask
     },
   };
 }
@@ -190,7 +191,26 @@ async function main() {
   assert('设备2 收到其他两台的消息', c2.got() === 2, '收到 ' + c2.got() + '/2');
   assert('PC 收到其他两台的消息', cpc.got() === 2, '收到 ' + cpc.got() + '/2');
 
-  console.log('[6] 房间隔离：另一台进 9999，收不到 0000 的消息');
+  console.log('[6] 图片广播：HTTP /upload → PC(wss) & 小程序(polling) 都收到');
+  let mpImg = false, pcImg = false;
+  mp.sio.on('msg', (m) => { if (m.type === 'image') mpImg = true; });
+  pc.on('msg', (m) => { if (m.type === 'image') pcImg = true; });
+  await new Promise((resolve) => {
+    const boundary = '----ce' + Math.random().toString(16).slice(2);
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    const body = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="t.png"\r\nContent-Type: image/png\r\n\r\n`),
+      png,
+      Buffer.from(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="roomCode"\r\n\r\n0000\r\n--${boundary}--\r\n`),
+    ]);
+    const req = http.request(`http://localhost:${PORT}/upload`, { method: 'POST', headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}`, 'Content-Length': body.length } }, (res) => { let b = ''; res.on('data', d => b += d); res.on('end', () => resolve()); });
+    req.write(body); req.end();
+  });
+  await sleep(1500);
+  assert('小程序(polling) 收到 image 广播', mpImg);
+  assert('PC(wss) 收到 image 广播', pcImg);
+
+  console.log('[7] 房间隔离：另一台进 9999，收不到 0000 的消息');
   const mp3 = miniClient(BASE);
   for (let i = 0; i < 50; i++) { if (mp3.connected) break; await sleep(200); }
   mp3.emit('join', { roomCode: '9999' });
