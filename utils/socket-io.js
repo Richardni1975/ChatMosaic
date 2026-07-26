@@ -1,20 +1,27 @@
 // utils/socket-io.js
-// 微信小程序 Socket.IO 客户端适配器
+// 微信小程序 Socket.IO 客户端适配器（polling-only 传输）
 //
-// 小程序 wx.connectSocket 走的是原生 WebSocket，
-// 但 Render 代理对原生 WS 升级处理有时不可靠（体验版 vs 真机调试）。
-// PC 端用的 Socket.IO（先 HTTP 轮询再升级）则稳定通过。
+// 为什么不用 WebSocket(wss)：
+// Render 等海外托管 + 国内真机网络，wss 长连接经常 code=1006 超时连不上
+// （onOpen 都触发不了），而 HTTPS 短请求（polling）稳定可达。
+// Socket.IO 协议原生支持 polling 传输，与 PC 端 wss 走同一服务端、同一房间，
+// 跨端互通不受影响。
 //
-// 本模块在小程序端实现了最小化的 Engine.IO v4 + Socket.IO v4 协议，
-// 通过 /socket.io/ 端点与服务端通信，与 PC 端协议完全一致，
-// 消除传输层不兼容导致的跨端不通。
+// Engine.IO v4 polling 帧格式（与 wss 不同）：
+// - 单包：直接 <packet>，无长度前缀（如 "40"、"2"）
+// - 多包：用 \x1E (Record Separator) 分隔拼接
+// - GET ?transport=polling&sid=xxx：long-poll 接收（服务端 hold ~25s）
+// - POST ?transport=polling&sid=xxx body=<packet>：发送
+//
+// 严格遵守 CLAUDE.md：纯内存中转、零留存、无身份映射（本模块仅客户端传输）。
 
 const EIO_VERSION = 4;
+const RECORD_SEP = '\x1e';
 
 /**
- * 创建 Socket.IO 连接
+ * 创建 Socket.IO 连接（polling-only）
  * @param {string} url  服务端基地址，如 https://chatmosaic-1.onrender.com
- * @param {object} opts  选项（保留兼容）
+ * @param {object} opts  选项（保留兼容，path 默认 /socket.io/）
  * @returns {object}  { emit, on, disconnect, connected }
  */
 function connect(url, opts) {
@@ -22,16 +29,14 @@ function connect(url, opts) {
   const path = (opts && opts.path) || '/socket.io/';
 
   const handlers = {}; // eventName → [callback]
-  let sock = null;      // wx.connectSocket 返回的 SocketTask
-  let sid = null;       // Engine.IO session id
-  let open = false;     // Socket.IO namespace connected
-  let pingTimer = null;
-  let pingInterval = 15000;
-  let pingTimeout = 10000;
+  let sid = null;            // Engine.IO session id
+  let open = false;          // Socket.IO namespace connected
+  let disposed = false;
   let reconnectTimer = null;
-  let manualClose = false;
-  let disposed = false; // disconnect 后标记，阻止重连与后续回调
-  let eioBuf = '';      // Engine.IO 帧缓冲（处理 TCP 分片）
+
+  let polling = false;       // GET long-poll 是否在途
+  let posting = false;       // POST 是否在途
+  const sendQueue = [];      // 待发送的 packet（串行 POST，支持批量）
 
   function on(evt, fn) {
     if (disposed) return;
@@ -40,17 +45,11 @@ function connect(url, opts) {
   }
 
   function emit(evt, data) {
-    if (!open || !sock) return;
-    // 完整字节 = EIO message(4) + SIO EVENT(2) + JSON
-    // sendEio 已拼 EIO type，故 payload 只含 SIO 部分：'2' + JSON
-    const payload = '2' + JSON.stringify([evt, data]);
-    sendEio(4, payload);
-  }
-
-  function sendEio(type, payload) {
-    if (!sock) return;
-    const s = String(type) + (payload || '');
-    sock.send({ data: s });
+    if (!open || disposed) return;
+    // EIO message(4) + SIO EVENT(2) + JSON → "42[event,data]"
+    // 此前漏了 EIO type 4，服务端把 "2[...]" 当作带 data 的 ping → transport error
+    const pkt = '42' + JSON.stringify([evt, data]);
+    queueSend(pkt);
   }
 
   function trigger(evt, data) {
@@ -59,26 +58,192 @@ function connect(url, opts) {
     if (fns) fns.forEach((fn) => { try { fn(data); } catch (e) {} });
   }
 
-  function startPing() {
-    stopPing();
-    pingTimer = setTimeout(() => {
-      sendEio(2); // Engine.IO ping
-      pingTimer = setTimeout(() => {
-        // ping timeout — 断开重连
-        console.warn('[socket-io] ping 超时，断开重连');
-        teardown();
-        scheduleReconnect();
-      }, pingTimeout);
-    }, pingInterval);
+  /* ---- 发送（POST polling）---- */
+  // 多个 packet 用 \x1e 拼接一次性 POST，减少 HTTP 往返
+  function queueSend(pkt) {
+    if (disposed || !sid) return;
+    sendQueue.push(pkt);
+    flushSend();
   }
 
-  function stopPing() {
-    if (pingTimer) { clearTimeout(pingTimer); pingTimer = null; }
+  function flushSend() {
+    if (posting || disposed || !sid || sendQueue.length === 0) return;
+    const mySid = sid;
+    const batch = sendQueue.splice(0, sendQueue.length);
+    const body = batch.join(RECORD_SEP);
+    posting = true;
+    wx.request({
+      url: base + path + '?EIO=' + EIO_VERSION + '&transport=polling&sid=' + mySid,
+      method: 'POST',
+      data: body,
+      header: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      timeout: 20000,
+      success: (res) => {
+        posting = false;
+        if (disposed || sid !== mySid) return;
+        if (res.statusCode !== 200) {
+          // 400 通常是 sid 失效，触发重连
+          if (res.statusCode === 400) scheduleReconnect();
+        }
+        flushSend();
+      },
+      fail: () => {
+        posting = false;
+        if (disposed || sid !== mySid) return;
+        // POST 失败不直接重连，pollLoop 兜底；但把 packet 丢回队列重试一次
+        if (sendQueue.length === 0) {
+          sendQueue.unshift(...batch);
+          setTimeout(flushSend, 1000);
+        }
+      },
+    });
+  }
+
+  /* ---- 接收（GET long-poll 循环）---- */
+  function pollLoop() {
+    if (disposed || !sid || polling) return;
+    const mySid = sid;
+    polling = true;
+    wx.request({
+      url: base + path + '?EIO=' + EIO_VERSION + '&transport=polling&sid=' + mySid,
+      method: 'GET',
+      timeout: 35000, // > 服务端 long-poll hold(~25s)
+      success: (res) => {
+        polling = false;
+        if (disposed || sid !== mySid) return;
+        if (res.statusCode !== 200) {
+          scheduleReconnect();
+          return;
+        }
+        const body = typeof res.data === 'string' ? res.data : '';
+        if (body) {
+          const pkts = body.split(RECORD_SEP);
+          for (const p of pkts) if (p) handleEioPacket(p);
+        }
+        pollLoop(); // 立即发起下一轮
+      },
+      fail: () => {
+        polling = false;
+        if (disposed || sid !== mySid) return;
+        scheduleReconnect();
+      },
+    });
+  }
+
+  /* ---- Engine.IO 帧处理 ---- */
+  function handleEioPacket(pkt) {
+    const t = parseInt(pkt[0], 10);
+    if (isNaN(t)) return;
+    if (t === 2) {
+      // 服务端 ping → 回 pong
+      queueSend('3');
+      return;
+    }
+    if (t === 3 || t === 6) {
+      // pong / noop，忽略
+      return;
+    }
+    if (t === 4) {
+      // message → Socket.IO 帧
+      handleSioPacket(pkt.slice(1));
+      return;
+    }
+    if (t === 1) {
+      // Engine.IO close
+      open = false;
+      scheduleReconnect();
+      return;
+    }
+    if (t === 0) {
+      // OPEN（polling 模式下 handshake 已处理，忽略重复）
+      return;
+    }
+  }
+
+  function handleSioPacket(s) {
+    if (!s) return;
+    const t = parseInt(s[0], 10);
+    if (isNaN(t)) return;
+    if (t === 0) {
+      // CONNECT 确认 → namespace 已连接
+      open = true;
+      console.log('[socket-io] ✅ namespace connected (polling)');
+      trigger('connect');
+      return;
+    }
+    if (t === 1) {
+      // DISCONNECT
+      open = false;
+      scheduleReconnect();
+      return;
+    }
+    if (t === 4) {
+      console.warn('[socket-io] CONNECT_ERROR', s.slice(1));
+      return;
+    }
+    if (t === 2) {
+      // EVENT: s = '2["event",payload]'
+      try {
+        const arr = JSON.parse(s.slice(1));
+        if (Array.isArray(arr) && arr.length >= 1) {
+          trigger(arr[0], arr.length > 1 ? arr[1] : null);
+        }
+      } catch (e) {}
+      return;
+    }
+  }
+
+  /* ---- 连接生命周期 ---- */
+  function handshake() {
+    if (disposed) return;
+    console.log('[socket-io] polling 握手', base + path);
+    wx.request({
+      url: base + path + '?EIO=' + EIO_VERSION + '&transport=polling',
+      method: 'GET',
+      timeout: 60000, // Render 免费实例冷启动需 30–60s
+      success: (res) => {
+        if (disposed) return;
+        if (res.statusCode !== 200) {
+          console.warn('[socket-io] 握手 HTTP', res.statusCode);
+          scheduleReconnect();
+          return;
+        }
+        const body = typeof res.data === 'string' ? res.data : '';
+        const pkts = body.split(RECORD_SEP);
+        const openPkt = pkts.find((p) => p && p[0] === '0');
+        if (!openPkt) {
+          console.warn('[socket-io] 握手响应无 OPEN 帧', body.slice(0, 80));
+          scheduleReconnect();
+          return;
+        }
+        let d;
+        try { d = JSON.parse(openPkt.slice(1)); } catch (e) {
+          console.warn('[socket-io] 握手 JSON 解析失败');
+          scheduleReconnect();
+          return;
+        }
+        sid = d.sid;
+        console.log('[socket-io] 握手成功 sid=' + sid);
+        queueSend('40'); // Socket.IO CONNECT
+        pollLoop();
+      },
+      fail: (err) => {
+        if (disposed) return;
+        console.warn('[socket-io] 握手网络错误', JSON.stringify(err));
+        scheduleReconnect();
+      },
+    });
   }
 
   function scheduleReconnect() {
-    if (manualClose || disposed) return;
+    if (disposed) return;
     if (reconnectTimer) return;
+    open = false;
+    // 清 sid：在途的 GET/POST 响应回来时 sid!==mySid 会被丢弃
+    sid = null;
+    polling = false;
+    posting = false;
+    sendQueue.length = 0;
     console.log('[socket-io] 3s 后重连…');
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
@@ -86,221 +251,14 @@ function connect(url, opts) {
     }, 3000);
   }
 
-  /* ---- Engine.IO 帧解析 ---- */
-  // 缓冲区管理：每个分支只移动 pos，循环末尾统一 eioBuf = eioBuf.slice(pos)。
-  // 这样无论帧是单独到达还是粘包，都能正确消费，不会残留已处理字节导致重放。
-  function onSockMessage(res) {
-    const raw = typeof res.data === 'string' ? res.data : '';
-    eioBuf += raw;
-
-    // Engine.IO 帧格式: <type>[data]，type 为单个数字字符
-    let pos = 0;
-    while (pos < eioBuf.length) {
-      const type = parseInt(eioBuf[pos], 10);
-      if (isNaN(type)) { pos++; continue; }
-
-      if (type === 2) {
-        // 服务端心跳 Ping → 回 Pong
-        sendEio(3);
-        pos++;
-        continue;
-      }
-      if (type === 3) {
-        // Pong：可能是 upgrade probe 回执，也可能是我们自己 ping 的回应
-        const rest = eioBuf.slice(pos + 1);
-        if (rest.startsWith('probe')) {
-          // 收到 probe pong → 发 upgrade 完成 transport 切换；
-          // 随后发 Socket.IO CONNECT(40) 进入默认 namespace。
-          // 顺序关键：必须先 5（upgrade）再 40，否则 _maybeUpgrade 会因
-          // 收到非 probe/upgrade 包而 transport.close()。
-          sendEio(5);
-          sendEio(4, '0');
-          pos += 1 + 5; // 消费 "3probe"
-          continue;
-        }
-        pos++;
-        continue;
-      }
-      if (type === 0) {
-        // Open — 解析 0{...}（WS 通道一般不再发，保留兼容）
-        const rest = eioBuf.slice(pos + 1);
-        const jsonEnd = findJsonEnd(rest);
-        if (jsonEnd < 0) break; // JSON 不完整，等待更多数据
-        let data = {};
-        try { data = JSON.parse(rest.slice(0, jsonEnd + 1)); } catch (e) { break; }
-        sid = data.sid;
-        pingInterval = data.pingInterval || 15000;
-        pingTimeout = data.pingTimeout || 10000;
-        pos += 1 + jsonEnd + 1;
-        continue;
-      }
-      if (type === 4) {
-        // Message — 包含 Socket.IO 帧
-        const rest = eioBuf.slice(pos + 1);
-        const parsed = parseSioFrame(rest);
-        if (parsed === null) break; // 数据不完整，等待更多
-        pos += 1 + parsed.consumed;
-        handleSioPacket(parsed.type, parsed.data);
-        continue;
-      }
-      // 未知类型，跳过
-      pos++;
-    }
-    eioBuf = eioBuf.slice(pos);
-  }
-
-  /** 从字符串起始找 JSON 对象的结束位置（匹配花括号层级） */
-  function findJsonEnd(s) {
-    if (!s || s[0] !== '{') return -1;
-    let depth = 0;
-    let inStr = false;
-    let escape = false;
-    for (let i = 0; i < s.length; i++) {
-      const c = s[i];
-      if (escape) { escape = false; continue; }
-      if (c === '\\') { escape = true; continue; }
-      if (c === '"') { inStr = !inStr; continue; }
-      if (inStr) continue;
-      if (c === '{') depth++;
-      else if (c === '}') { depth--; if (depth === 0) return i; }
-    }
-    return -1; // 对象未闭合
-  }
-
-  // consumed = 在 raw 中消费的字符数（含 sioType）：1 + JSON 长度。
-  function parseSioFrame(raw) {
-    if (raw.length < 1) return null;
-    const sioType = parseInt(raw[0], 10);
-    if (isNaN(sioType)) return null;
-    const rest = raw.slice(1); // JSON 部分（可能为空，如 "40"）
-    if (rest.length === 0) {
-      return { type: sioType, data: null, consumed: 1 };
-    }
-    try {
-      const arr = JSON.parse(rest);
-      return { type: sioType, data: arr, consumed: 1 + rest.length };
-    } catch (e) {
-      return null; // JSON 不完整，等待更多
-    }
-  }
-
-  function handleSioPacket(type, data) {
-    // type: 0=CONNECT, 1=DISCONNECT, 2=EVENT, 3=ACK, 4=CONNECT_ERROR
-    if (type === 0) {
-      // CONNECTED to namespace
-      open = true;
-      startPing();
-      return;
-    }
-    if (type === 1) {
-      // DISCONNECT
-      open = false;
-      stopPing();
-      scheduleReconnect();
-      return;
-    }
-    if (type === 4) {
-      // CONNECT_ERROR
-      console.warn('[socket-io] 连接错误', data);
-      return;
-    }
-    if (type === 2 && Array.isArray(data) && data.length >= 1) {
-      // EVENT: data = [eventName, payload]
-      const evt = data[0];
-      const payload = data.length > 1 ? data[1] : null;
-      trigger(evt, payload);
-    }
-  }
-
-  /* ---- 连接生命周期 ---- */
-
-  function teardown() {
-    stopPing();
-    open = false;
-    if (sock) {
-      try { sock.close({ code: 1000, reason: 'client' }); } catch (e) {}
-      sock = null;
-    }
-    eioBuf = '';
-  }
-
-  function openWebSocket() {
-    if (!sid) return;
-    const wsUrl = base.replace(/^http/, 'ws') + path + '?EIO=' + EIO_VERSION + '&transport=websocket&sid=' + sid;
-    console.log('[socket-io] 连接 WebSocket', wsUrl);
-
-    sock = wx.connectSocket({ url: wsUrl });
-
-    sock.onOpen(() => {
-      console.log('[socket-io] ✅ WebSocket 已连接 (sid=' + sid + ')');
-      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-      // Engine.IO upgrade probe：WS 连上后必须先发 2probe → 收 3probe → 发 5，
-      // 服务端才会把这条 WS 接受为正式 transport；否则 10s 后被强制关闭。
-      sendEio(2, 'probe');
-    });
-
-    sock.onMessage(onSockMessage);
-
-    sock.onError((err) => {
-      console.error('[socket-io] ❌ WebSocket 错误', JSON.stringify(err));
-    });
-
-    sock.onClose((info) => {
-      console.warn('[socket-io] WebSocket 关闭 code=' + (info && info.code), 'reason=' + (info && info.reason));
-      stopPing();
-      open = false;
-      sock = null;
-      if (!manualClose) scheduleReconnect();
-    });
-  }
-
-  function handshake() {
-    const pollUrl = base + path + '?EIO=' + EIO_VERSION + '&transport=polling';
-    console.log('[socket-io] 握手', pollUrl);
-
-    wx.request({
-      url: pollUrl,
-      method: 'GET',
-      timeout: 15000,
-      success: (res) => {
-        if (res.statusCode !== 200) {
-          console.error('[socket-io] 握手失败 HTTP', res.statusCode);
-          scheduleReconnect();
-          return;
-        }
-        const body = typeof res.data === 'string' ? res.data : '';
-        // 解析 Engine.IO open 帧: 0{...}
-        if (body.length < 2 || body[0] !== '0') {
-          console.error('[socket-io] 握手响应格式异常', body.slice(0, 60));
-          scheduleReconnect();
-          return;
-        }
-        let openData;
-        try { openData = JSON.parse(body.slice(1)); } catch (e) {
-          console.error('[socket-io] 握手 JSON 解析失败');
-          scheduleReconnect();
-          return;
-        }
-        sid = openData.sid;
-        pingInterval = openData.pingInterval || 15000;
-        pingTimeout = openData.pingTimeout || 10000;
-        console.log('[socket-io] 握手成功 sid=' + sid);
-        openWebSocket();
-      },
-      fail: (err) => {
-        console.error('[socket-io] 握手网络错误', JSON.stringify(err));
-        scheduleReconnect();
-      },
-    });
-  }
-
   function disconnect() {
-    manualClose = true;
     disposed = true;
-    stopPing();
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-    teardown();
-    // 清空监听器，释放闭包引用，杜绝重连过程中残留回调误触发
+    open = false;
+    sid = null;
+    polling = false;
+    posting = false;
+    sendQueue.length = 0;
     Object.keys(handlers).forEach((k) => { delete handlers[k]; });
   }
 

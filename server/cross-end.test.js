@@ -9,7 +9,6 @@
 
 const { spawn } = require('child_process');
 const http = require('http');
-const WebSocket = require('ws');
 const { io } = require('socket.io-client');
 const crypto = require('../utils/crypto.js');
 
@@ -24,40 +23,32 @@ function assert(name, cond, detail = '') {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/* ---------- mock wx 全局，让 utils/socket-io.js 在 Node 里跑 ---------- */
+/* ---------- mock wx 全局，让 utils/socket-io.js (polling) 在 Node 里跑 ---------- */
 function installWxMock() {
-  const taskMap = new WeakMap();
-  function makeTask(wsUrl) {
-    // wsUrl 形如 ws://host/socket.io/?EIO=4&transport=websocket&sid=xxx
-    const ws = new WebSocket(wsUrl);
-    const task = {
-      _ws: ws,
-      _handlers: { open: [], message: [], error: [], close: [] },
-      onOpen(fn) { this._handlers.open.push(fn); },
-      onMessage(fn) { this._handlers.message.push(fn); },
-      onError(fn) { this._handlers.error.push(fn); },
-      onClose(fn) { this._handlers.close.push(fn); },
-      send(obj) { ws.send(obj.data); },
-      close(opts) { try { ws.close(1000, opts && opts.reason); } catch (e) {} },
-    };
-    ws.on('open', () => task._handlers.open.forEach((f) => { try { f(); } catch (e) {} }));
-    ws.on('message', (data) => task._handlers.message.forEach((f) => { try { f({ data: data.toString() }); } catch (e) {} }));
-    ws.on('error', (err) => task._handlers.error.forEach((f) => { try { f({ errMsg: err.message }); } catch (e) {} }));
-    ws.on('close', (code, reason) => task._handlers.close.forEach((f) => { try { f({ code, reason: reason.toString() }); } catch (e) {} }));
-    return task;
-  }
-
   global.wx = {
-    connectSocket(opts) { return makeTask(opts.url); },
     request(opts) {
-      // 模拟 polling GET
-      http.get(opts.url, (res) => {
+      const u = new URL(opts.url);
+      const options = {
+        hostname: u.hostname, port: u.port || 80,
+        path: u.pathname + u.search,
+        method: opts.method || 'GET',
+        headers: opts.header || {},
+      };
+      const bodyData = (options.method === 'POST' || options.method === 'PUT') && opts.data != null
+        ? String(opts.data) : null;
+      if (bodyData) options.headers['Content-Length'] = Buffer.byteLength(bodyData);
+      const req = http.request(options, (res) => {
         let body = '';
+        res.setEncoding('utf8');
         res.on('data', (d) => (body += d));
         res.on('end', () => {
           if (opts.success) opts.success({ statusCode: res.statusCode, data: body });
         });
-      }).on('error', (err) => { if (opts.fail) opts.fail({ errMsg: err.message }); });
+      });
+      req.on('error', (err) => { if (opts.fail) opts.fail({ errMsg: err.message }); });
+      if (opts.timeout) req.setTimeout(opts.timeout, () => { req.destroy(); if (opts.fail) opts.fail({ errMsg: 'request:fail timeout' }); });
+      if (bodyData) req.write(bodyData);
+      req.end();
     },
   };
 }
@@ -221,7 +212,7 @@ async function main() {
   child.kill();
 
   console.log(`\n[cross-end] 通过 ${passed}/${passed + failed}` + (failed ? `，失败 ${failed}` : ' ✅'));
-  if (failed) process.exit(1);
+  process.exit(failed ? 1 : 0);
 }
 
 main().catch((e) => {

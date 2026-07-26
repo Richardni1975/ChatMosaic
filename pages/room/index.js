@@ -366,7 +366,8 @@ Page({
       }
     }, 200);
 
-    // 10 秒超时——握手可能失败
+    // 70s 超时兜底：Render 免费实例冷启动需 30–60s，polling timeout 已设 60s。
+    // 此前 10s 会打断仍在途的 polling 触发重连风暴，必须 > 60s。
     setTimeout(() => {
       if (this._connReady) {
         clearInterval(this._connReady);
@@ -377,7 +378,7 @@ Page({
           this.connectRelay();
         }
       }
-    }, 10000);
+    }, 70000);
   },
 
   /** 统一消息处理（替代原生 ws 的 onMessage） */
