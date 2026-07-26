@@ -107,16 +107,17 @@ function connect(url, opts) {
         continue;
       }
       if (type === 0) {
-        // Open
+        // Open — 解析 0{...}，保留后续帧（如紧跟的 40 Socket.IO CONNECTED）
         const rest = eioBuf.slice(pos + 1);
+        const jsonEnd = findJsonEnd(rest);
+        if (jsonEnd < 0) break; // JSON 不完整，等待更多数据
         let data = {};
-        try { data = JSON.parse(rest); } catch (e) { /* 等待更多数据 */ break; }
+        try { data = JSON.parse(rest.slice(0, jsonEnd + 1)); } catch (e) { break; }
         sid = data.sid;
         pingInterval = data.pingInterval || 15000;
         pingTimeout = data.pingTimeout || 10000;
-        eioBuf = '';
-        // 收到 Engine.IO open 后请求 Socket.IO 连接
-        sendEio(4, '40'); // Socket.IO CONNECT to default namespace
+        // 只移除已解析的 0{json}，保留尾部后续帧
+        eioBuf = rest.slice(jsonEnd + 1);
         pos = 0;
         continue;
       }
@@ -133,6 +134,24 @@ function connect(url, opts) {
       // 未知类型，跳过
       pos++;
     }
+  }
+
+  /** 从字符串起始找 JSON 对象的结束位置（匹配花括号层级） */
+  function findJsonEnd(s) {
+    if (!s || s[0] !== '{') return -1;
+    let depth = 0;
+    let inStr = false;
+    let escape = false;
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (escape) { escape = false; continue; }
+      if (c === '\\') { escape = true; continue; }
+      if (c === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) return i; }
+    }
+    return -1; // 对象未闭合
   }
 
   function parseSioFrame(raw) {
