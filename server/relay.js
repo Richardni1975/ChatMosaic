@@ -348,7 +348,7 @@ function handleUpload(req, res) {
       isAnonymous, timestamp: Date.now(),
     });
     console.log(`[momo-relay] 图片上传 ${imageUrl} → 房间 ${roomCode}（${f.size}B）`);
-    json(res, 200, { ok: true, imageUrl });
+    json(res, 200, { ok: true, imageUrl, msgId: payload.msgId });
   });
 }
 

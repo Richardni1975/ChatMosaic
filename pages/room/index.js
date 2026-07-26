@@ -322,6 +322,11 @@ Page({
 
   connectRelay() {
     if (this.socket && this.socket.connected) return;
+    // 重连前先彻底销毁旧连接，防止旧适配器实例仍在后台重连/收消息（多重监听与连接泄露）
+    if (this.socket) {
+      try { this.socket.disconnect(); } catch (e) {}
+      this.socket = null;
+    }
 
     console.log('[momo] Socket.IO 连接中…', SIO_URL);
     const sio = socketIO.connect(SIO_URL);
@@ -578,7 +583,6 @@ Page({
     }
 
     this.destroyLocalRecord();
-    console.log('[momo] Phase 4 stub: delay.randomDelay =', typeof delay.randomDelay);
   },
 
   /* ---------------- 实名直发：接收与渲染 ---------------- */
@@ -645,9 +649,9 @@ Page({
         try {
           const data = JSON.parse(res.data);
           if (data.ok && data.imageUrl) {
-            const msgId = 'img-local-' + Date.now().toString(36);
+            // 复用服务端 msgId，使随后到达的 WebSocket 广播被 seenIds 去重，避免重复卡片
             that.onImage({
-              msgId,
+              msgId: data.msgId,
               imageUrl: data.imageUrl,
               userName: that.data.userName,
               isAnonymous: that.data.isAnonymous,

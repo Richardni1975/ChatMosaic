@@ -30,17 +30,20 @@ function connect(url, opts) {
   let pingTimeout = 10000;
   let reconnectTimer = null;
   let manualClose = false;
+  let disposed = false; // disconnect 后标记，阻止重连与后续回调
   let eioBuf = '';      // Engine.IO 帧缓冲（处理 TCP 分片）
 
   function on(evt, fn) {
+    if (disposed) return;
     if (!handlers[evt]) handlers[evt] = [];
     handlers[evt].push(fn);
   }
 
   function emit(evt, data) {
     if (!open || !sock) return;
-    // Socket.IO: 42["event", data]
-    const payload = '42' + JSON.stringify([evt, data]);
+    // 完整字节 = EIO message(4) + SIO EVENT(2) + JSON
+    // sendEio 已拼 EIO type，故 payload 只含 SIO 部分：'2' + JSON
+    const payload = '2' + JSON.stringify([evt, data]);
     sendEio(4, payload);
   }
 
@@ -51,6 +54,7 @@ function connect(url, opts) {
   }
 
   function trigger(evt, data) {
+    if (disposed) return;
     const fns = handlers[evt];
     if (fns) fns.forEach((fn) => { try { fn(data); } catch (e) {} });
   }
@@ -73,41 +77,52 @@ function connect(url, opts) {
   }
 
   function scheduleReconnect() {
-    if (manualClose) return;
+    if (manualClose || disposed) return;
     if (reconnectTimer) return;
     console.log('[socket-io] 3s 后重连…');
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
-      handshake();
+      if (!disposed) handshake();
     }, 3000);
   }
 
   /* ---- Engine.IO 帧解析 ---- */
+  // 缓冲区管理：每个分支只移动 pos，循环末尾统一 eioBuf = eioBuf.slice(pos)。
+  // 这样无论帧是单独到达还是粘包，都能正确消费，不会残留已处理字节导致重放。
   function onSockMessage(res) {
     const raw = typeof res.data === 'string' ? res.data : '';
     eioBuf += raw;
 
-    // Engine.IO 帧格式: <type>[data]
-    // type 为单个数字字符
+    // Engine.IO 帧格式: <type>[data]，type 为单个数字字符
     let pos = 0;
     while (pos < eioBuf.length) {
       const type = parseInt(eioBuf[pos], 10);
       if (isNaN(type)) { pos++; continue; }
-      // 类型 0/1/2/3 无附属数据（或 JSON）
-      // 类型 4 后面跟着 Socket.IO 报文
+
       if (type === 2) {
-        // Ping → Pong
+        // 服务端心跳 Ping → 回 Pong
         sendEio(3);
         pos++;
         continue;
       }
       if (type === 3) {
-        // Pong（我们自己发的 ping 的回应）
+        // Pong：可能是 upgrade probe 回执，也可能是我们自己 ping 的回应
+        const rest = eioBuf.slice(pos + 1);
+        if (rest.startsWith('probe')) {
+          // 收到 probe pong → 发 upgrade 完成 transport 切换；
+          // 随后发 Socket.IO CONNECT(40) 进入默认 namespace。
+          // 顺序关键：必须先 5（upgrade）再 40，否则 _maybeUpgrade 会因
+          // 收到非 probe/upgrade 包而 transport.close()。
+          sendEio(5);
+          sendEio(4, '0');
+          pos += 1 + 5; // 消费 "3probe"
+          continue;
+        }
         pos++;
         continue;
       }
       if (type === 0) {
-        // Open — 解析 0{...}，保留后续帧（如紧跟的 40 Socket.IO CONNECTED）
+        // Open — 解析 0{...}（WS 通道一般不再发，保留兼容）
         const rest = eioBuf.slice(pos + 1);
         const jsonEnd = findJsonEnd(rest);
         if (jsonEnd < 0) break; // JSON 不完整，等待更多数据
@@ -116,9 +131,7 @@ function connect(url, opts) {
         sid = data.sid;
         pingInterval = data.pingInterval || 15000;
         pingTimeout = data.pingTimeout || 10000;
-        // 只移除已解析的 0{json}，保留尾部后续帧
-        eioBuf = rest.slice(jsonEnd + 1);
-        pos = 0;
+        pos += 1 + jsonEnd + 1;
         continue;
       }
       if (type === 4) {
@@ -126,14 +139,14 @@ function connect(url, opts) {
         const rest = eioBuf.slice(pos + 1);
         const parsed = parseSioFrame(rest);
         if (parsed === null) break; // 数据不完整，等待更多
-        eioBuf = eioBuf.slice(pos + 1 + parsed.consumed);
+        pos += 1 + parsed.consumed;
         handleSioPacket(parsed.type, parsed.data);
-        pos = 0;
         continue;
       }
       // 未知类型，跳过
       pos++;
     }
+    eioBuf = eioBuf.slice(pos);
   }
 
   /** 从字符串起始找 JSON 对象的结束位置（匹配花括号层级） */
@@ -154,14 +167,13 @@ function connect(url, opts) {
     return -1; // 对象未闭合
   }
 
+  // consumed = 在 raw 中消费的字符数（含 sioType）：1 + JSON 长度。
   function parseSioFrame(raw) {
     if (raw.length < 1) return null;
     const sioType = parseInt(raw[0], 10);
     if (isNaN(sioType)) return null;
-    const rest = raw.slice(1);
-    // 尝试解析 JSON
+    const rest = raw.slice(1); // JSON 部分（可能为空，如 "40"）
     if (rest.length === 0) {
-      // 无附属数据（如 "40"）
       return { type: sioType, data: null, consumed: 1 };
     }
     try {
@@ -222,6 +234,9 @@ function connect(url, opts) {
     sock.onOpen(() => {
       console.log('[socket-io] ✅ WebSocket 已连接 (sid=' + sid + ')');
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      // Engine.IO upgrade probe：WS 连上后必须先发 2probe → 收 3probe → 发 5，
+      // 服务端才会把这条 WS 接受为正式 transport；否则 10s 后被强制关闭。
+      sendEio(2, 'probe');
     });
 
     sock.onMessage(onSockMessage);
@@ -281,9 +296,12 @@ function connect(url, opts) {
 
   function disconnect() {
     manualClose = true;
+    disposed = true;
     stopPing();
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     teardown();
+    // 清空监听器，释放闭包引用，杜绝重连过程中残留回调误触发
+    Object.keys(handlers).forEach((k) => { delete handlers[k]; });
   }
 
   // 启动
